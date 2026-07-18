@@ -1,0 +1,102 @@
+# authevo
+
+Official Node.js / TypeScript SDK for the [Authevo](https://authevo.dev) WhatsApp OTP verification API. Send and verify one-time codes over WhatsApp (with an automatic Telegram fallback) in a few lines.
+
+- **Typed** — full TypeScript types, no `any` at the edges.
+- **Zero dependencies** — uses the built-in `fetch` (Node 18+).
+- **Test mode built in** — use a **test** API key to run a sandbox: nothing is sent, nothing is charged, and the code is always `123456`.
+
+## Install
+
+```bash
+npm install authevo
+```
+
+## Quickstart
+
+```ts
+import { Authevo } from 'authevo';
+
+const authevo = new Authevo({ apiKey: process.env.AUTHEVO_API_KEY! });
+
+// 1. Send a code
+await authevo.otp.send({ phone: '+201234567890' });
+
+// 2. Verify what the user entered
+const { verified } = await authevo.otp.verify({ phone: '+201234567890', code: '123456' });
+if (verified) {
+  // sign the user in
+}
+```
+
+CommonJS works too:
+
+```js
+const { Authevo } = require('authevo');
+```
+
+## Test mode
+
+Create a **test** key in your [dashboard](https://dashboard.authevo.dev/en/keys) (Create key → Environment: Test). It runs the exact same code path, but **no message is sent and nothing is charged** — the verification code is always `123456`:
+
+```ts
+const authevo = new Authevo({ apiKey: 'sk_your_test_key' });
+await authevo.otp.send({ phone: '+201234567890' });         // no WhatsApp message goes out
+await authevo.otp.verify({ phone: '+201234567890', code: '123456' }); // → { verified: true }
+```
+
+## API
+
+### `new Authevo(options)`
+
+| option      | type              | default                     | notes                                              |
+| ----------- | ----------------- | --------------------------- | -------------------------------------------------- |
+| `apiKey`    | `string`          | —                           | **required.** Your secret `sk_…` key.              |
+| `baseUrl`   | `string`          | `https://api.authevo.dev`   | override the API host.                             |
+| `timeoutMs` | `number`          | `30000`                     | per-request timeout.                              |
+| `fetch`     | `typeof fetch`    | global `fetch`              | inject a custom fetch (proxy/tests).              |
+
+### `otp.send({ phone })` → `{ messageId, status, expiresIn }`
+
+Generates and delivers a one-time code. `phone` must be [E.164](https://en.wikipedia.org/wiki/E.164) (e.g. `+201234567890`).
+
+### `otp.verify({ phone, code })` → `{ verified, attemptsRemaining? }`
+
+Checks a code. `verified: false` means wrong or expired; `attemptsRemaining` counts down to a temporary block.
+
+### `otp.deliver({ phone, code })` → `{ messageId, status }`
+
+Deliver a code **you** generated (e.g. from another auth provider) — no verify step.
+
+### `otp.status(messageId)` → `{ status, channel, createdAt }`
+
+Look up the delivery status of a previous send.
+
+### `me()` → `{ email, publishableKey, tier, wabaConnected, creditBalance }`
+
+The authenticated account, including its current credit balance.
+
+## Error handling
+
+Every call rejects with an `AuthevoError`:
+
+```ts
+import { Authevo, AuthevoError } from 'authevo';
+
+try {
+  await authevo.otp.send({ phone: '+201234567890' });
+} catch (err) {
+  if (err instanceof AuthevoError) {
+    console.error(err.code, err.status, err.message);
+    if (err.code === 'RATE_LIMIT_EXCEEDED') {
+      // err.retryAfter is the number of seconds to wait
+    }
+  }
+}
+```
+
+Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, plus client-side `invalid_phone` / `invalid_config` / `network_error`.
+
+## License
+
+MIT

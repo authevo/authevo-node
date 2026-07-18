@@ -1,0 +1,56 @@
+{
+  "name": "authevo",
+  "version": "0.1.0",
+  "description": "Official Node.js / TypeScript SDK for the Authevo WhatsApp OTP verification API.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --minify",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "authevo",
+    "otp",
+    "whatsapp",
+    "2fa",
+    "verification",
+    "one-time-password",
+    "auth",
+    "telegram"
+  ],
+  "author": "Authevo",
+  "license": "MIT",
+  "homepage": "https://authevo.dev",
+  "bugs": {
+    "url": "https://authevo.dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/authevo/authevo-node.git"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
