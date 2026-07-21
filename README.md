@@ -89,7 +89,8 @@ try {
   if (err instanceof AuthevoError) {
     console.error(err.code, err.status, err.message);
     if (err.code === 'RATE_LIMIT_EXCEEDED') {
-      // err.retryAfter is the number of seconds to wait
+      // Back off and retry. err.retryAfter is the seconds to wait *when* the API
+      // includes a Retry-After header (otherwise undefined — fall back to your own delay).
     }
   }
 }
