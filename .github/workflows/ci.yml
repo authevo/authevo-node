@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build (dual ESM/CJS + .d.ts)
+        run: npm run build
+
+      # Guard the exact bug the SDK once shipped: a stale @types/node crashed the DTS
+      # build and silently dropped the type declarations from the tarball. Fail CI if
+      # dist/index.d.ts is not in what `npm publish` would pack.
+      - name: Verify the tarball ships type declarations
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e "const files=require('/tmp/pack.json')[0].files.map(f=>f.path); if(!files.includes('dist/index.d.ts')){console.error('FAIL: dist/index.d.ts missing from tarball\n', files); process.exit(1);} console.log('OK — types shipped:', files.filter(f=>f.endsWith('.d.ts')||f.endsWith('.d.cts')));"
