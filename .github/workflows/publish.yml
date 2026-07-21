@@ -1,0 +1,48 @@
+name: Publish to npm
+
+# Publishes the SDK to npm with a PROVENANCE attestation via OIDC "trusted publishing"
+# — no long-lived npm token is stored in this repo (OIDC authenticates the run).
+# Triggered by a published GitHub Release, so the flow is: bump the version + update
+# CHANGELOG.md → tag vX.Y.Z → create a GitHub Release → this publishes that version.
+#
+# ⚠️ ONE-TIME SETUP (on npmjs.com) required before the first release will succeed:
+#   npmjs.com → the `authevo` package → Settings → "Trusted Publishers" → Add publisher:
+#     • Provider:          GitHub Actions
+#     • Organization/user: authevo
+#     • Repository:        authevo-node
+#     • Workflow filename: publish.yml
+#     • Environment name:  (leave blank)
+#   Until that is configured, `npm publish` here fails with an authentication error.
+#   (Trusted publishing is GA since 2025 and needs npm >= 11.5.1 — upgraded below.)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # REQUIRED — the OIDC token trusted publishing + provenance depend on
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      # Node 22 bundles an npm older than trusted publishing needs.
+      - name: Upgrade npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - run: npm ci
+
+      # prepublishOnly runs the build. `--provenance` is explicit belt-and-suspenders
+      # (trusted publishing already generates provenance by default). NO NODE_AUTH_TOKEN
+      # is set — authentication is via the OIDC id-token above.
+      - name: Publish (OIDC trusted publishing + provenance)
+        run: npm publish --provenance --access public
