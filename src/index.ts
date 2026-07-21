@@ -1,4 +1,5 @@
 import { AuthevoError } from './errors.js';
+import { verifyWebhook } from './webhooks.js';
 import type {
   Account,
   AuthevoOptions,
@@ -9,6 +10,12 @@ import type {
 } from './types.js';
 
 export { AuthevoError } from './errors.js';
+export { verifyWebhook } from './webhooks.js';
+export type {
+  AccountLowBalanceEvent,
+  OtpStatusUpdateEvent,
+  WebhookEvent,
+} from './webhooks.js';
 export type {
   Account,
   AuthevoOptions,
@@ -120,6 +127,10 @@ export class Authevo {
       return { status: d.status, channel: d.channel, createdAt: d.created_at };
     },
   };
+
+  /** Verify an incoming webhook's `X-Authevo-Signature`. Also exported standalone as
+   *  `verifyWebhook` — exposed here for discoverability. See {@link verifyWebhook}. */
+  static readonly verifyWebhook = verifyWebhook;
 
   /** The authenticated account — tier, WhatsApp connection, and credit balance. */
   me(): Promise<Account> {

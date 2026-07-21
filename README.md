@@ -98,6 +98,33 @@ try {
 
 Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, plus client-side `invalid_phone` / `invalid_config` / `network_error`.
 
+## Webhooks
+
+Authevo POSTs delivery-status and low-balance events to your `webhook_url`, each signed with an `X-Authevo-Signature: sha256=…` header (HMAC-SHA256 of the raw body, keyed with your webhook secret). Verify it with the **raw** body — never a re-serialized object — before trusting the payload:
+
+```ts
+import { verifyWebhook, type WebhookEvent } from 'authevo';
+
+app.post('/webhooks/authevo', (req, res) => {
+  const ok = verifyWebhook({
+    payload: req.rawBody,                          // the raw request body (string/Buffer)
+    signature: req.header('X-Authevo-Signature'),
+    secret: process.env.AUTHEVO_WEBHOOK_SECRET!,
+  });
+  if (!ok) return res.sendStatus(401);
+
+  const event = JSON.parse(req.rawBody.toString()) as WebhookEvent;
+  if (event.event === 'otp.status_update') {
+    // event.meta_message_id, event.status: 'delivered' | 'read' | 'failed'
+  } else if (event.event === 'account.low_balance') {
+    // event.balance
+  }
+  res.sendStatus(200);
+});
+```
+
+`verifyWebhook` does a constant-time comparison and returns `false` (never throws) on a missing or malformed signature.
+
 ## License
 
 MIT
