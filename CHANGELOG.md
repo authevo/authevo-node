@@ -3,7 +3,7 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-07-30)
 
 - Add TOTP (RFC 6238) support — `totp.enroll` / `totp.verify` / `totp.disable` —
   Authevo's second, independent verification method (no send step, no message
