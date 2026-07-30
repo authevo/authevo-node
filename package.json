@@ -1,7 +1,7 @@
 {
   "name": "authevo",
   "version": "0.2.0",
-  "description": "Official Node.js / TypeScript SDK for the Authevo WhatsApp OTP verification API.",
+  "description": "Official Node.js / TypeScript SDK for the Authevo verification API — WhatsApp OTP (with Telegram fallback) and TOTP two-factor.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
