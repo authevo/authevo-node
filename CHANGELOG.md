@@ -3,8 +3,13 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 0.1.1 (unreleased)
+## 0.2.0 (unreleased)
 
+- Add TOTP (RFC 6238) support — `totp.enroll` / `totp.verify` / `totp.disable` —
+  Authevo's second, independent verification method (no send step, no message
+  cost). Test-mode keys run a real-math sandbox against a fixed public demo
+  secret (see the README's Test mode section for how this differs from `otp.*`'s
+  always-`123456` sandbox).
 - Expose `./package.json` in the package `exports` map, so tooling that reads a
   dependency's `package.json` (bundlers, some resolvers) can resolve it.
 - Add continuous integration (type-check, unit tests, dual ESM/CJS build, and a

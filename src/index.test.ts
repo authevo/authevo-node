@@ -96,6 +96,62 @@ describe('Authevo', () => {
     });
   });
 
+  it('totp.enroll posts the phone and maps snake_case → camelCase', async () => {
+    const { client, calls } = withFetch(() =>
+      ok({ secret: 'ABC123', otpauth_url: 'otpauth://totp/x', qr_code: 'data:image/png;base64,x', already_enrolled: false }),
+    );
+    const res = await client.totp.enroll({ phone: '+201234567890' });
+    expect(res).toEqual({ secret: 'ABC123', otpauthUrl: 'otpauth://totp/x', qrCode: 'data:image/png;base64,x', alreadyEnrolled: false });
+    expect(calls[0]!.url).toBe('https://api.authevo.dev/v1/totp/enroll');
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890' });
+  });
+
+  it('totp.enroll only includes replace in the body when explicitly passed', async () => {
+    const { client, calls } = withFetch(() =>
+      ok({ secret: 'ABC123', otpauth_url: 'otpauth://totp/x', qr_code: 'x', already_enrolled: true }),
+    );
+    await client.totp.enroll({ phone: '+201234567890', replace: true });
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890', replace: true });
+  });
+
+  it('totp.verify maps attempts_remaining and first_confirm', async () => {
+    const { client } = withFetch(() => ok({ verified: true, first_confirm: true }));
+    expect(await client.totp.verify({ phone: '+201234567890', code: '123456' })).toEqual({
+      verified: true,
+      attemptsRemaining: undefined,
+      firstConfirm: true,
+    });
+  });
+
+  it('totp.disable posts the phone and maps the result', async () => {
+    const { client, calls } = withFetch(() => ok({ disabled: true }));
+    expect(await client.totp.disable({ phone: '+201234567890' })).toEqual({ disabled: true });
+    expect(calls[0]!.url).toBe('https://api.authevo.dev/v1/totp/disable');
+    expect(calls[0]!.init.method).toBe('POST');
+  });
+
+  it('totp.* rejects a non-E.164 phone before any request, same as otp.*', async () => {
+    const { client, calls } = withFetch(() => ok({}));
+    await expect(client.totp.enroll({ phone: '01234' })).rejects.toMatchObject({ code: 'invalid_phone' });
+    await expect(client.totp.verify({ phone: '01234', code: '123456' })).rejects.toMatchObject({ code: 'invalid_phone' });
+    await expect(client.totp.disable({ phone: '01234' })).rejects.toMatchObject({ code: 'invalid_phone' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('totp.enroll surfaces a 409 ALREADY_ENROLLED the same way otp.* surfaces other API errors', async () => {
+    const { client } = withFetch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'ALREADY_ENROLLED', message: 'Pass replace: true.' } }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    await expect(client.totp.enroll({ phone: '+201234567890' })).rejects.toMatchObject({
+      code: 'ALREADY_ENROLLED',
+      status: 409,
+    });
+  });
+
   it('honors a custom baseUrl (trailing slash trimmed)', async () => {
     const calls: string[] = [];
     const client = new Authevo({

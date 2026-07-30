@@ -6,6 +6,9 @@ import type {
   DeliverResult,
   SendResult,
   StatusResult,
+  TotpDisableResult,
+  TotpEnrollResult,
+  TotpVerifyResult,
   VerifyResult,
 } from './types.js';
 
@@ -25,6 +28,9 @@ export type {
   OtpStatus,
   SendResult,
   StatusResult,
+  TotpDisableResult,
+  TotpEnrollResult,
+  TotpVerifyResult,
   VerifyResult,
 } from './types.js';
 
@@ -56,6 +62,10 @@ function assertPhone(phone: string): void {
  * const authevo = new Authevo({ apiKey: process.env.AUTHEVO_API_KEY! });
  * await authevo.otp.send({ phone: '+201234567890' });
  * const { verified } = await authevo.otp.verify({ phone: '+201234567890', code: '123456' });
+ *
+ * // TOTP (a second, independent verification method — no send step):
+ * const { qrCode } = await authevo.totp.enroll({ phone: '+201234567890' });
+ * const totpResult = await authevo.totp.verify({ phone: '+201234567890', code: '654321' });
  * ```
  */
 export class Authevo {
@@ -125,6 +135,45 @@ export class Authevo {
         `/v1/otp/status/${encodeURIComponent(messageId)}`,
       );
       return { status: d.status, channel: d.channel, createdAt: d.created_at };
+    },
+  };
+
+  /** TOTP (RFC 6238) two-factor — a second, independent verification method: no
+   *  "send" step, no delivery cost. Enroll once per phone (scan the returned QR
+   *  with any authenticator app), then verify the rotating 6-digit code it shows
+   *  forever after. Every method returns a promise — a bad input REJECTS with an
+   *  `AuthevoError` (`invalid_phone`), it never throws synchronously. */
+  readonly totp = {
+    /** Issue (or re-issue) a phone's TOTP secret. A CONFIRMED enrollment already in
+     *  place rejects with a 409 `AuthevoError` unless `replace: true` is passed. */
+    enroll: async (params: { phone: string; replace?: boolean }): Promise<TotpEnrollResult> => {
+      assertPhone(params.phone);
+      const d = await this.#request<{ secret: string; otpauth_url: string; qr_code: string; already_enrolled: boolean }>(
+        'POST',
+        '/v1/totp/enroll',
+        { phone: params.phone, ...(params.replace !== undefined ? { replace: params.replace } : {}) },
+      );
+      return { secret: d.secret, otpauthUrl: d.otpauth_url, qrCode: d.qr_code, alreadyEnrolled: d.already_enrolled };
+    },
+
+    /** Check a 6-digit code from the user's authenticator app. `verified: false`
+     *  means wrong/expired/already-used — the same code never verifies twice. */
+    verify: async (params: { phone: string; code: string }): Promise<TotpVerifyResult> => {
+      assertPhone(params.phone);
+      const d = await this.#request<{ verified: boolean; attempts_remaining?: number; first_confirm?: boolean }>(
+        'POST',
+        '/v1/totp/verify',
+        { phone: params.phone, code: params.code },
+      );
+      return { verified: d.verified, attemptsRemaining: d.attempts_remaining, firstConfirm: d.first_confirm };
+    },
+
+    /** Turn TOTP off for a phone — soft, idempotent, and reversible by enrolling
+     *  again later. A disabled phone's `verify` calls behave as not-enrolled. */
+    disable: async (params: { phone: string }): Promise<TotpDisableResult> => {
+      assertPhone(params.phone);
+      const d = await this.#request<{ disabled: boolean }>('POST', '/v1/totp/disable', { phone: params.phone });
+      return { disabled: d.disabled };
     },
   };
 

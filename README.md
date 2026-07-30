@@ -1,10 +1,10 @@
 # authevo
 
-Official Node.js / TypeScript SDK for the [Authevo](https://authevo.dev) WhatsApp OTP verification API. Send and verify one-time codes over WhatsApp (with an automatic Telegram fallback) in a few lines.
+Official Node.js / TypeScript SDK for the [Authevo](https://authevo.dev) verification API — two independent auth methods: one-time codes over WhatsApp (with an automatic Telegram fallback), and TOTP two-factor via any authenticator app (no message ever sent).
 
 - **Typed** — full TypeScript types, no `any` at the edges.
 - **Zero dependencies** — uses the built-in `fetch` (Node 18+).
-- **Test mode built in** — use a **test** API key to run a sandbox: nothing is sent, nothing is charged, and the code is always `123456`.
+- **Test mode built in** — use a **test** API key to run a sandbox for both methods: nothing is sent, nothing is charged.
 
 ## Install
 
@@ -29,6 +29,17 @@ if (verified) {
 }
 ```
 
+Or TOTP — a second, independent verification method (no send step, no message cost):
+
+```ts
+// 1. Enroll once — show the QR to your user (any authenticator app: Google
+// Authenticator, Authy, 1Password) or let them type in the secret manually.
+const { qrCode, secret } = await authevo.totp.enroll({ phone: '+201234567890' });
+
+// 2. From then on, verify the rotating 6-digit code their app shows.
+const { verified } = await authevo.totp.verify({ phone: '+201234567890', code: '654321' });
+```
+
 CommonJS works too:
 
 ```js
@@ -37,12 +48,20 @@ const { Authevo } = require('authevo');
 
 ## Test mode
 
-Create a **test** key in your [dashboard](https://dashboard.authevo.dev/en/keys) (Create key → Environment: Test). It runs the exact same code path, but **no message is sent and nothing is charged** — the verification code is always `123456`:
+Create a **test** key in your [dashboard](https://dashboard.authevo.dev/en/keys) (Create key → Environment: Test). It runs the exact same code path for both auth methods, but the sandbox behaves differently for each:
 
 ```ts
 const authevo = new Authevo({ apiKey: 'sk_your_test_key' });
-await authevo.otp.send({ phone: '+201234567890' });         // no WhatsApp message goes out
+
+// OTP: no WhatsApp message goes out, and the code is always 123456.
+await authevo.otp.send({ phone: '+201234567890' });
 await authevo.otp.verify({ phone: '+201234567890', code: '123456' }); // → { verified: true }
+
+// TOTP: enroll always returns the SAME fixed, public demo secret (never a real,
+// per-account one) — add it to any authenticator app to get a genuinely valid,
+// real-math, rotating code. Nothing is written to your database, nothing billed.
+const { secret } = await authevo.totp.enroll({ phone: '+201234567890' });
+await authevo.totp.verify({ phone: '+201234567890', code: /* from your app */ '654321' });
 ```
 
 ## API
@@ -72,6 +91,18 @@ Deliver a code **you** generated (e.g. from another auth provider) — no verify
 
 Look up the delivery status of a previous send.
 
+### `totp.enroll({ phone, replace? })` → `{ secret, otpauthUrl, qrCode, alreadyEnrolled }`
+
+Issues (or re-issues) a phone's TOTP secret. `qrCode` is a ready-to-display PNG data URI (`<img src={qrCode}>`) — no QR-rendering library needed on your end; `otpauthUrl` and `secret` are there for a manual-entry fallback. A CONFIRMED enrollment already in place rejects with a 409 `AuthevoError` (`ALREADY_ENROLLED`) unless you pass `replace: true`.
+
+### `totp.verify({ phone, code })` → `{ verified, attemptsRemaining?, firstConfirm? }`
+
+Checks a 6-digit code from the user's authenticator app. `firstConfirm` is `true` only on the exact call that confirms a brand-new enrollment — a one-time "setup just completed" signal, since TOTP has no send step to hang it on otherwise.
+
+### `totp.disable({ phone })` → `{ disabled }`
+
+Turns TOTP off for a phone — soft and idempotent. A disabled phone's `verify` calls behave as not-enrolled; enrolling again later turns it back on.
+
 ### `me()` → `{ email, publishableKey, tier, wabaConnected, creditBalance }`
 
 The authenticated account, including its current credit balance.
@@ -96,7 +127,7 @@ try {
 }
 ```
 
-Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, plus client-side `invalid_phone` / `invalid_config` / `network_error`.
+Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), plus client-side `invalid_phone` / `invalid_config` / `network_error`.
 
 ## Webhooks
 
