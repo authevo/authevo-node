@@ -37,6 +37,7 @@ export type {
 const DEFAULT_BASE_URL = 'https://api.authevo.dev';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const E164 = /^\+[1-9]\d{6,14}$/;
+const IDEMPOTENCY_KEY = /^[\x21-\x7E]{1,255}$/;
 
 /** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds. */
 function parseRetryAfter(header: string | null): number | undefined {
@@ -51,6 +52,23 @@ function parseRetryAfter(header: string | null): number | undefined {
 function assertPhone(phone: string): void {
   if (typeof phone !== 'string' || !E164.test(phone)) {
     throw new AuthevoError('invalid_phone', 'phone must be an E.164 number, e.g. "+201234567890".', 0);
+  }
+}
+
+/**
+ * An Idempotency-Key travels as an HTTP header, so it must be header-safe: a value with a
+ * newline in it is a request-splitting hazard, and `fetch` rejects it with an opaque
+ * TypeError that would surface here as a bogus `network_error`. Validated client-side
+ * because the API takes the header raw. ASCII 0x21-0x7E, 1-255 chars — a superset of the
+ * UUID most callers will use, and the same shape Stripe accepts.
+ */
+function assertIdempotencyKey(key: string): void {
+  if (typeof key !== 'string' || !IDEMPOTENCY_KEY.test(key)) {
+    throw new AuthevoError(
+      'invalid_idempotency_key',
+      'idempotencyKey must be 1-255 printable ASCII characters (a UUID is a good choice).',
+      0,
+    );
   }
 }
 
@@ -95,13 +113,28 @@ export class Authevo {
   /** WhatsApp/Telegram OTP send + verify. Every method returns a promise — a bad input
    *  REJECTS with an `AuthevoError` (`invalid_phone`), it never throws synchronously. */
   readonly otp = {
-    /** Generate and deliver a one-time code to `phone`. Backend picks the channel. */
-    send: async (params: { phone: string }): Promise<SendResult> => {
+    /** Generate and deliver a one-time code to `phone`. Backend picks the channel.
+     *
+     * `idempotencyKey` makes a retry safe. This is a CHARGED call that also sends a real
+     * message, so retrying after a timeout without one delivers a second code AND bills
+     * you twice — and a timeout is exactly when you cannot tell whether the first attempt
+     * landed. Reuse the SAME key for every retry of the same logical send (a fresh key per
+     * attempt buys nothing); within 24h the API replays the original response instead of
+     * re-running the send. A concurrent retry gets 409 `IDEMPOTENCY_KEY_IN_PROGRESS`.
+     *
+     * ```ts
+     * const key = crypto.randomUUID();          // once per login attempt, NOT per retry
+     * await authevo.otp.send({ phone, idempotencyKey: key });
+     * ```
+     */
+    send: async (params: { phone: string; idempotencyKey?: string }): Promise<SendResult> => {
       assertPhone(params.phone);
+      if (params.idempotencyKey !== undefined) assertIdempotencyKey(params.idempotencyKey);
       const d = await this.#request<{ message_id: string; status: string; expires_in: number }>(
         'POST',
         '/v1/otp/send',
         { phone: params.phone },
+        params.idempotencyKey,
       );
       return { messageId: d.message_id, status: d.status, expiresIn: d.expires_in };
     },
@@ -117,13 +150,17 @@ export class Authevo {
       return { verified: d.verified, attemptsRemaining: d.attempts_remaining };
     },
 
-    /** Deliver a code YOU generated (e.g. from another auth provider) — no verify step. */
-    deliver: async (params: { phone: string; code: string }): Promise<DeliverResult> => {
+    /** Deliver a code YOU generated (e.g. from another auth provider) — no verify step.
+     *  Charged per send on every tier, so `idempotencyKey` matters here for the same
+     *  reason it does on `send` — see the note there. */
+    deliver: async (params: { phone: string; code: string; idempotencyKey?: string }): Promise<DeliverResult> => {
       assertPhone(params.phone);
+      if (params.idempotencyKey !== undefined) assertIdempotencyKey(params.idempotencyKey);
       const d = await this.#request<{ message_id: string; status: string }>(
         'POST',
         '/v1/otp/deliver',
         { phone: params.phone, code: params.code },
+        params.idempotencyKey,
       );
       return { messageId: d.message_id, status: d.status };
     },
@@ -198,7 +235,7 @@ export class Authevo {
     }));
   }
 
-  async #request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async #request<T>(method: string, path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
     let res: Response;
     try {
       res = await this.#fetch(this.#baseUrl + path, {
@@ -206,6 +243,7 @@ export class Authevo {
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...(idempotencyKey !== undefined ? { 'Idempotency-Key': idempotencyKey } : {}),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(this.#timeoutMs),
@@ -229,7 +267,7 @@ export class Authevo {
     if (!res.ok) {
       const envelope =
         json && typeof json === 'object' && 'error' in json
-          ? (json as { error?: { code?: string; message?: string } }).error
+          ? (json as { error?: { code?: string; message?: string; telegram_bot_url?: string } }).error
           : undefined;
       const retryAfter =
         res.status === 429 ? parseRetryAfter(res.headers.get('retry-after')) : undefined;
@@ -238,6 +276,9 @@ export class Authevo {
         envelope?.message ?? `Request failed with status ${res.status}.`,
         res.status,
         retryAfter,
+        // Carried on CHANNEL_NOT_LINKED. Single-use and minted per failure, so dropping
+        // it here (as this SDK did) made the documented Telegram fallback unimplementable.
+        typeof envelope?.telegram_bot_url === 'string' ? envelope.telegram_bot_url : undefined,
       );
     }
 

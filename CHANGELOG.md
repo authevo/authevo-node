@@ -3,6 +3,23 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.3.0 (2026-09-10)
+
+- **Idempotency support on the two charged endpoints.** `otp.send` and `otp.deliver`
+  now accept an optional `idempotencyKey`, forwarded as the `Idempotency-Key` header.
+  The API has honoured that header on both routes for some time; this SDK never sent
+  it, so the retry-after-timeout every integrator writes delivered a second message
+  and billed a second time. Reuse the same key across retries of one logical send —
+  within 24h the API replays the original response. A racing retry surfaces as
+  `IDEMPOTENCY_KEY_IN_PROGRESS` (409). Keys are validated client-side (1-255
+  printable ASCII) because a header-unsafe value otherwise fails as an opaque
+  `network_error`. See the README's "Retries and idempotency".
+- **`AuthevoError.telegramBotUrl`.** A `CHANNEL_NOT_LINKED` failure carries the
+  single-use link that lets the recipient connect the Telegram fallback; the SDK was
+  discarding it, which made the fallback the docs describe impossible to implement
+  through the SDK at all. The URL is minted per failure, so it could not be
+  reconstructed by the caller.
+
 ## 0.2.0 (2026-07-30)
 
 - Add TOTP (RFC 6238) support — `totp.enroll` / `totp.verify` / `totp.disable` —

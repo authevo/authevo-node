@@ -75,17 +75,21 @@ await authevo.totp.verify({ phone: '+201234567890', code: /* from your app */ '6
 | `timeoutMs` | `number`          | `30000`                     | per-request timeout.                              |
 | `fetch`     | `typeof fetch`    | global `fetch`              | inject a custom fetch (proxy/tests).              |
 
-### `otp.send({ phone })` → `{ messageId, status, expiresIn }`
+### `otp.send({ phone, idempotencyKey? })` → `{ messageId, status, expiresIn }`
 
 Generates and delivers a one-time code. `phone` must be [E.164](https://en.wikipedia.org/wiki/E.164) (e.g. `+201234567890`).
+
+`idempotencyKey` makes a retry safe — see [Retries and idempotency](#retries-and-idempotency).
 
 ### `otp.verify({ phone, code })` → `{ verified, attemptsRemaining? }`
 
 Checks a code. `verified: false` means wrong or expired; `attemptsRemaining` counts down to a temporary block.
 
-### `otp.deliver({ phone, code })` → `{ messageId, status }`
+### `otp.deliver({ phone, code, idempotencyKey? })` → `{ messageId, status }`
 
 Deliver a code **you** generated (e.g. from another auth provider) — no verify step.
+Charged per send on every tier, so `idempotencyKey` matters here for the same reason
+it does on `send` — see [Retries and idempotency](#retries-and-idempotency).
 
 ### `otp.status(messageId)` → `{ status, channel, createdAt }`
 
@@ -107,6 +111,38 @@ Turns TOTP off for a phone — soft and idempotent. A disabled phone's `verify` 
 
 The authenticated account, including its current credit balance.
 
+## Retries and idempotency
+
+`otp.send` and `otp.deliver` both **cost money and send a real message**. A timeout is
+precisely the case where you cannot tell whether the first attempt landed, so retrying
+without an idempotency key delivers a second code to the recipient *and* bills you twice.
+
+Pass an `idempotencyKey` and reuse the **same** key for every retry of the same logical
+operation. Within 24 hours the API replays the original response instead of re-running
+the send. A fresh key per attempt buys you nothing — the key is what ties the retry to
+the original.
+
+```ts
+// One key per login attempt — generated BEFORE the first try, reused on every retry.
+const idempotencyKey = crypto.randomUUID();
+
+async function sendWithRetry(phone: string) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await authevo.otp.send({ phone, idempotencyKey });
+    } catch (err) {
+      if (err instanceof AuthevoError && err.code === 'network_error' && attempt < 2) continue;
+      throw err;
+    }
+  }
+}
+```
+
+A retry that races the original (the first call is still in flight) rejects with
+`IDEMPOTENCY_KEY_IN_PROGRESS` (HTTP 409) — wait and retry with the same key.
+
+The key must be 1–255 printable ASCII characters; a UUID is a good choice.
+
 ## Error handling
 
 Every call rejects with an `AuthevoError`:
@@ -127,7 +163,25 @@ try {
 }
 ```
 
-Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), plus client-side `invalid_phone` / `invalid_config` / `network_error`.
+Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), `IDEMPOTENCY_KEY_IN_PROGRESS`, plus client-side `invalid_phone` / `invalid_config` / `invalid_idempotency_key` / `network_error`.
+
+### The Telegram fallback
+
+When WhatsApp delivery fails and the recipient has never linked Telegram, the error is
+`CHANNEL_NOT_LINKED` and carries `err.telegramBotUrl`. Show that link to the recipient:
+one tap on **Start** in Telegram links their number, and the pending code is delivered
+there. The URL is single-use and minted for that failure, so there is nothing to cache
+and no way to reconstruct it later.
+
+```ts
+try {
+  await authevo.otp.send({ phone });
+} catch (err) {
+  if (err instanceof AuthevoError && err.code === 'CHANNEL_NOT_LINKED' && err.telegramBotUrl) {
+    showLinkToUser(err.telegramBotUrl);
+  }
+}
+```
 
 ## Webhooks
 

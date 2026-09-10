@@ -165,4 +165,112 @@ describe('Authevo', () => {
     await client.otp.send({ phone: '+201234567890' });
     expect(calls[0]).toBe('http://localhost:3000/v1/otp/send');
   });
+
+  // ── Idempotency-Key ───────────────────────────────────────────────────────────
+  // /otp/send and /otp/deliver are charged AND send a real message. The API has
+  // honoured Idempotency-Key on both since B5; this SDK never sent it, so the retry
+  // every integrator writes after a timeout double-sent and double-charged.
+
+  it('otp.send sends no Idempotency-Key header when none is given', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    await client.otp.send({ phone: '+201234567890' });
+    expect((calls[0]!.init.headers as Record<string, string>)['Idempotency-Key']).toBeUndefined();
+  });
+
+  it('otp.send forwards idempotencyKey as the Idempotency-Key header', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    await client.otp.send({ phone: '+201234567890', idempotencyKey: 'a1b2c3' });
+    expect((calls[0]!.init.headers as Record<string, string>)['Idempotency-Key']).toBe('a1b2c3');
+  });
+
+  it('otp.send keeps idempotencyKey OUT of the request body', async () => {
+    // It is a header, and a stray body field would fail the route's
+    // additionalProperties:false schema with a 400 on every idempotent send.
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    await client.otp.send({ phone: '+201234567890', idempotencyKey: 'k' });
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890' });
+  });
+
+  it('otp.deliver forwards idempotencyKey too', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm2', status: 'sent' }));
+    await client.otp.deliver({ phone: '+201234567890', code: '123456', idempotencyKey: 'k2' });
+    expect((calls[0]!.init.headers as Record<string, string>)['Idempotency-Key']).toBe('k2');
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890', code: '123456' });
+  });
+
+  it('rejects a header-unsafe idempotencyKey before any request is made', async () => {
+    // A newline in a header value is a request-splitting hazard and makes fetch throw an
+    // opaque TypeError that would surface as a bogus network_error.
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    for (const bad of ['bad\nkey', 'bad key', '', 'k'.repeat(256), 'ké']) {
+      await expect(client.otp.send({ phone: '+201234567890', idempotencyKey: bad })).rejects.toThrow(
+        /idempotencyKey must be/,
+      );
+    }
+    expect(calls.length).toBe(0);
+  });
+
+  it('surfaces the API 409 when a concurrent retry is still in flight', async () => {
+    const { client } = withFetch(
+      () =>
+        new Response(
+          JSON.stringify({ error: { code: 'IDEMPOTENCY_KEY_IN_PROGRESS', message: 'Already processing.' } }),
+          { status: 409, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    await expect(client.otp.send({ phone: '+201234567890', idempotencyKey: 'k' })).rejects.toMatchObject({
+      code: 'IDEMPOTENCY_KEY_IN_PROGRESS',
+      status: 409,
+    });
+  });
+
+  // ── telegram_bot_url on CHANNEL_NOT_LINKED ────────────────────────────────────
+
+  it('carries telegram_bot_url off a CHANNEL_NOT_LINKED error', async () => {
+    // Single-use and minted per failure: dropping it made the documented Telegram
+    // fallback impossible to implement through this SDK.
+    const { client } = withFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'CHANNEL_NOT_LINKED',
+              message: 'Could not deliver via WhatsApp…',
+              telegram_bot_url: 'https://t.me/authevo?start=tok123',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    await expect(client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({
+      code: 'CHANNEL_NOT_LINKED',
+      telegramBotUrl: 'https://t.me/authevo?start=tok123',
+    });
+  });
+
+  it('leaves telegramBotUrl undefined on errors that do not carry one', async () => {
+    const { client } = withFetch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'INSUFFICIENT_CREDITS', message: 'No credit.' } }), {
+          status: 402,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const err = await client.otp.send({ phone: '+201234567890' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AuthevoError);
+    expect((err as AuthevoError).telegramBotUrl).toBeUndefined();
+  });
+
+  it('ignores a non-string telegram_bot_url rather than typing a lie', async () => {
+    const { client } = withFetch(
+      () =>
+        new Response(
+          JSON.stringify({ error: { code: 'CHANNEL_NOT_LINKED', message: 'x', telegram_bot_url: 42 } }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const err = await client.otp.send({ phone: '+201234567890' }).catch((e: unknown) => e);
+    expect((err as AuthevoError).telegramBotUrl).toBeUndefined();
+  });
+
 });
