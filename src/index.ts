@@ -17,6 +17,7 @@ export { verifyWebhook } from './webhooks.js';
 export type {
   AccountLowBalanceEvent,
   OtpStatusUpdateEvent,
+  OtpTelegramLinkedEvent,
   WebhookEvent,
 } from './webhooks.js';
 export type {

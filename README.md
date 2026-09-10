@@ -1,6 +1,6 @@
 # authevo
 
-Official Node.js / TypeScript SDK for the [Authevo](https://authevo.dev) verification API — two independent auth methods: one-time codes over WhatsApp (with an automatic Telegram fallback), and TOTP two-factor via any authenticator app (no message ever sent).
+Official Node.js / TypeScript SDK for the [Authevo](https://authevo.dev) verification API — two independent auth methods: one-time codes over WhatsApp (with automatic Telegram fallback after a one-time recipient link), and TOTP two-factor via any authenticator app (no message ever sent).
 
 - **Typed** — full TypeScript types, no `any` at the edges.
 - **Zero dependencies** — uses the built-in `fetch` (Node 18+).
@@ -185,7 +185,7 @@ try {
 
 ## Webhooks
 
-Authevo POSTs delivery-status and low-balance events to your `webhook_url`, each signed with an `X-Authevo-Signature: sha256=…` header (HMAC-SHA256 of the raw body, keyed with your webhook secret). Verify it with the **raw** body — never a re-serialized object — before trusting the payload:
+Authevo POSTs delivery-status, low-balance, and Telegram-link events to your `webhook_url`, each signed with an `X-Authevo-Signature: sha256=…` header (HMAC-SHA256 of the raw body, keyed with your webhook secret). Verify it with the **raw** body — never a re-serialized object — before trusting the payload:
 
 ```ts
 import { verifyWebhook, type WebhookEvent } from 'authevo';
@@ -203,12 +203,20 @@ app.post('/webhooks/authevo', (req, res) => {
     // event.meta_message_id, event.status: 'delivered' | 'read' | 'failed'
   } else if (event.event === 'account.low_balance') {
     // event.balance
+  } else if (event.event === 'otp.telegram_linked') {
+    // event.phone_hash, event.redelivered
   }
   res.sendStatus(200);
 });
 ```
 
 `verifyWebhook` does a constant-time comparison and returns `false` (never throws) on a missing or malformed signature.
+
+The complete event union is:
+
+- `otp.status_update` — `{ meta_message_id, status: 'delivered' | 'read' | 'failed' }`
+- `account.low_balance` — `{ balance }`
+- `otp.telegram_linked` — `{ phone_hash, redelivered }`
 
 ## License
 

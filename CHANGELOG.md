@@ -3,6 +3,14 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.3.1 (2026-09-11)
+
+- Add and export `OtpTelegramLinkedEvent`, and include it in `WebhookEvent`, so
+  the SDK now covers all three public webhook payloads: `otp.status_update`,
+  `account.low_balance`, and `otp.telegram_linked`.
+- Document the Telegram-link event's `phone_hash` and `redelivered` fields in
+  the webhook example and inline API reference.
+
 ## 0.3.0 (2026-09-10)
 
 - **Idempotency support on the two charged endpoints.** `otp.send` and `otp.deliver`

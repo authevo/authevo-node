@@ -15,8 +15,23 @@ export interface AccountLowBalanceEvent {
   balance: number;
 }
 
+/**
+ * An `otp.telegram_linked` webhook — emitted when a recipient completes the
+ * one-time Telegram link after WhatsApp delivery could not reach them.
+ */
+export interface OtpTelegramLinkedEvent {
+  event: 'otp.telegram_linked';
+  /** Salted SHA-256 hash of the linked recipient's normalized phone number. */
+  phone_hash: string;
+  /** Whether Authevo also delivered a fresh OTP when the link completed. */
+  redelivered: boolean;
+}
+
 /** Any webhook Authevo POSTs to your `webhook_url`, discriminated by `event`. */
-export type WebhookEvent = OtpStatusUpdateEvent | AccountLowBalanceEvent;
+export type WebhookEvent =
+  | OtpStatusUpdateEvent
+  | AccountLowBalanceEvent
+  | OtpTelegramLinkedEvent;
 
 /**
  * Verify an incoming Authevo webhook's signature. Every webhook we POST to your
@@ -36,6 +51,7 @@ export type WebhookEvent = OtpStatusUpdateEvent | AccountLowBalanceEvent;
  *   if (!ok) return res.sendStatus(401);
  *   const event = JSON.parse(req.rawBody.toString()) as WebhookEvent;
  *   // handle event.event === 'otp.status_update' | 'account.low_balance'
+ *   //   | 'otp.telegram_linked'
  *   res.sendStatus(200);
  * });
  * ```
