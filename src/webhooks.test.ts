@@ -1,6 +1,6 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { Authevo, verifyWebhook } from './index.js';
+import { Authevo, verifyWebhook, verifyWebhookV2 } from './index.js';
 import type {
   AccountLowBalanceEvent,
   OtpStatusUpdateEvent,
@@ -44,6 +44,26 @@ describe('verifyWebhook', () => {
 
   it('is also reachable as Authevo.verifyWebhook', () => {
     expect(Authevo.verifyWebhook({ payload: BODY, signature: sign(BODY), secret: SECRET })).toBe(true);
+  });
+});
+
+describe('verifyWebhookV2', () => {
+  const timestamp = '2000000000';
+  const id = 'evt_abc123';
+  const nowMs = Number(timestamp) * 1000;
+  const signature = 'sha256=' + createHmac('sha256', SECRET)
+    .update(`${id}.${timestamp}.${BODY}`)
+    .digest('hex');
+
+  it('accepts a fresh signature bound to the event id, timestamp, and raw body', () => {
+    expect(verifyWebhookV2({ payload: BODY, signature, timestamp, id, secret: SECRET, nowMs })).toBe(true);
+    expect(Authevo.verifyWebhookV2({ payload: BODY, signature, timestamp, id, secret: SECRET, nowMs })).toBe(true);
+  });
+
+  it('rejects stale, tampered, or re-bound deliveries', () => {
+    expect(verifyWebhookV2({ payload: BODY, signature, timestamp, id, secret: SECRET, nowMs: nowMs + 301_000 })).toBe(false);
+    expect(verifyWebhookV2({ payload: `${BODY} `, signature, timestamp, id, secret: SECRET, nowMs })).toBe(false);
+    expect(verifyWebhookV2({ payload: BODY, signature, timestamp, id: 'evt_other', secret: SECRET, nowMs })).toBe(false);
   });
 });
 

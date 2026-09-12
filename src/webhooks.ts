@@ -78,3 +78,33 @@ export function verifyWebhook(params: {
   if (expected.length !== received.length) return false;
   return timingSafeEqual(Buffer.from(expected), Buffer.from(received));
 }
+
+/**
+ * Verify the replay-resistant v2 webhook signature. Pass the raw body plus the
+ * `X-Authevo-Signature-V2`, `X-Authevo-Timestamp`, and `X-Authevo-Id` headers.
+ * Timestamps outside the tolerance (five minutes by default) are rejected.
+ */
+export function verifyWebhookV2(params: {
+  payload: string | Uint8Array;
+  signature: string | null | undefined;
+  timestamp: string | null | undefined;
+  id: string | null | undefined;
+  secret: string;
+  toleranceSeconds?: number;
+  nowMs?: number;
+}): boolean {
+  const { payload, signature, timestamp, id, secret } = params;
+  if (!secret || !signature?.startsWith('sha256=') || !timestamp || !id) return false;
+  if (!/^\d{10,}$/.test(timestamp)) return false;
+  const timestampMs = Number(timestamp) * 1000;
+  const toleranceMs = Math.max(0, params.toleranceSeconds ?? 300) * 1000;
+  if (!Number.isFinite(timestampMs) || Math.abs((params.nowMs ?? Date.now()) - timestampMs) > toleranceMs) return false;
+
+  const hmac = createHmac('sha256', secret);
+  hmac.update(`${id}.${timestamp}.`);
+  hmac.update(payload);
+  const expected = hmac.digest('hex');
+  const received = signature.slice(7);
+  if (expected.length !== received.length) return false;
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+}

@@ -49,19 +49,6 @@ describe('Authevo', () => {
     expect(calls[0]!.init.method).toBe('GET');
   });
 
-  it('me() maps the account fields', async () => {
-    const { client } = withFetch(() =>
-      ok({ email: 'a@b.co', pk_key: 'pk_x', tier: 'per_message', waba_connected: true, credit_balance: 12.5 }),
-    );
-    expect(await client.me()).toEqual({
-      email: 'a@b.co',
-      publishableKey: 'pk_x',
-      tier: 'per_message',
-      wabaConnected: true,
-      creditBalance: 12.5,
-    });
-  });
-
   it('rejects a non-E.164 phone before any request', async () => {
     const { client, calls } = withFetch(() => ok({}));
     await expect(client.otp.send({ phone: '01234' })).rejects.toMatchObject({ code: 'invalid_phone' });

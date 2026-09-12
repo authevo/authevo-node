@@ -1,7 +1,6 @@
 import { AuthevoError } from './errors.js';
-import { verifyWebhook } from './webhooks.js';
+import { verifyWebhook, verifyWebhookV2 } from './webhooks.js';
 import type {
-  Account,
   AuthevoOptions,
   DeliverResult,
   SendResult,
@@ -13,7 +12,7 @@ import type {
 } from './types.js';
 
 export { AuthevoError } from './errors.js';
-export { verifyWebhook } from './webhooks.js';
+export { verifyWebhook, verifyWebhookV2 } from './webhooks.js';
 export type {
   AccountLowBalanceEvent,
   OtpStatusUpdateEvent,
@@ -21,7 +20,6 @@ export type {
   WebhookEvent,
 } from './webhooks.js';
 export type {
-  Account,
   AuthevoOptions,
   ClientTier,
   DeliverResult,
@@ -219,22 +217,8 @@ export class Authevo {
    *  `verifyWebhook` — exposed here for discoverability. See {@link verifyWebhook}. */
   static readonly verifyWebhook = verifyWebhook;
 
-  /** The authenticated account — tier, WhatsApp connection, and credit balance. */
-  me(): Promise<Account> {
-    return this.#request<{
-      email: string;
-      pk_key: string;
-      tier: Account['tier'];
-      waba_connected: boolean;
-      credit_balance: number;
-    }>('GET', '/v1/clients/me').then((d) => ({
-      email: d.email,
-      publishableKey: d.pk_key,
-      tier: d.tier,
-      wabaConnected: d.waba_connected,
-      creditBalance: d.credit_balance,
-    }));
-  }
+  /** Verify the timestamped, event-id-bound webhook signature and reject stale replays. */
+  static readonly verifyWebhookV2 = verifyWebhookV2;
 
   async #request<T>(method: string, path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
     let res: Response;

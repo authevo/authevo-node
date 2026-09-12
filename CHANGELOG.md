@@ -3,6 +3,16 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.4.0 (2026-09-12)
+
+- Add `verifyWebhookV2` and `Authevo.verifyWebhookV2` for the API's new
+  timestamped, delivery-ID-bound webhook signature. Verification rejects stale
+  timestamps and uses constant-time signature comparison.
+- Remove `me()` and the `Account` type. Secret integration keys now authenticate
+  only the OTP/TOTP data plane and are deliberately rejected by dashboard account-
+  management routes. Account metadata remains available through the authenticated
+  dashboard rather than through an `sk_` credential.
+
 ## 0.3.1 (2026-09-11)
 
 - Add and export `OtpTelegramLinkedEvent`, and include it in `WebhookEvent`, so

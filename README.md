@@ -107,10 +107,6 @@ Checks a 6-digit code from the user's authenticator app. `firstConfirm` is `true
 
 Turns TOTP off for a phone — soft and idempotent. A disabled phone's `verify` calls behave as not-enrolled; enrolling again later turns it back on.
 
-### `me()` → `{ email, publishableKey, tier, wabaConnected, creditBalance }`
-
-The authenticated account, including its current credit balance.
-
 ## Retries and idempotency
 
 `otp.send` and `otp.deliver` both **cost money and send a real message**. A timeout is
@@ -185,15 +181,17 @@ try {
 
 ## Webhooks
 
-Authevo POSTs delivery-status, low-balance, and Telegram-link events to your `webhook_url`, each signed with an `X-Authevo-Signature: sha256=…` header (HMAC-SHA256 of the raw body, keyed with your webhook secret). Verify it with the **raw** body — never a re-serialized object — before trusting the payload:
+Authevo POSTs delivery-status, low-balance, and Telegram-link events to your `webhook_url`. Use the v2 signature, which binds the raw body to an event ID and timestamp and rejects stale replays:
 
 ```ts
-import { verifyWebhook, type WebhookEvent } from 'authevo';
+import { verifyWebhookV2, type WebhookEvent } from 'authevo';
 
 app.post('/webhooks/authevo', (req, res) => {
-  const ok = verifyWebhook({
+  const ok = verifyWebhookV2({
     payload: req.rawBody,                          // the raw request body (string/Buffer)
-    signature: req.header('X-Authevo-Signature'),
+    signature: req.header('X-Authevo-Signature-V2'),
+    timestamp: req.header('X-Authevo-Timestamp'),
+    id: req.header('X-Authevo-Id'),
     secret: process.env.AUTHEVO_WEBHOOK_SECRET!,
   });
   if (!ok) return res.sendStatus(401);
@@ -210,7 +208,7 @@ app.post('/webhooks/authevo', (req, res) => {
 });
 ```
 
-`verifyWebhook` does a constant-time comparison and returns `false` (never throws) on a missing or malformed signature.
+`verifyWebhookV2` uses a constant-time comparison, rejects timestamps older/newer than five minutes, and returns `false` rather than throwing. The legacy body-only `verifyWebhook` remains available during migration.
 
 The complete event union is:
 

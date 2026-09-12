@@ -60,17 +60,6 @@ export interface StatusResult {
   createdAt: string;
 }
 
-/** The authenticated account (`me()`). */
-export interface Account {
-  email: string;
-  /** The publishable `pk_` key (safe for client-side identification). */
-  publishableKey: string;
-  tier: ClientTier;
-  wabaConnected: boolean;
-  /** Current credit balance, in USD. */
-  creditBalance: number;
-}
-
 export interface AuthevoOptions {
   /** Your secret key (`sk_…`). A **test-mode** key runs the sandbox for BOTH auth
    *  methods, but differently: `otp.*` never sends a message, charges nothing, and
