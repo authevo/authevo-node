@@ -53,6 +53,29 @@ export interface TotpDisableResult {
   disabled: boolean;
 }
 
+/** OTP operations whose destination is fixed by `Authevo.bindPhone()`. */
+export interface BoundOtpClient {
+  send(params?: { idempotencyKey?: string }): Promise<SendResult>;
+  verify(params: { code: string }): Promise<VerifyResult>;
+  deliver(params: { code: string; idempotencyKey?: string }): Promise<DeliverResult>;
+}
+
+/** TOTP operations whose identity is fixed by `Authevo.bindPhone()`. */
+export interface BoundTotpClient {
+  enroll(params?: { replace?: boolean }): Promise<TotpEnrollResult>;
+  verify(params: { code: string }): Promise<TotpVerifyResult>;
+  disable(): Promise<TotpDisableResult>;
+}
+
+/**
+ * A phone-bound view of the SDK. Create it only from a phone loaded from your
+ * authenticated server-side user record, never from an unauthenticated request body.
+ */
+export interface BoundPhoneClient {
+  readonly otp: BoundOtpClient;
+  readonly totp: BoundTotpClient;
+}
+
 export interface StatusResult {
   status: OtpStatus;
   channel: OtpChannel;

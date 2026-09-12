@@ -19,11 +19,14 @@ import { Authevo } from 'authevo';
 
 const authevo = new Authevo({ apiKey: process.env.AUTHEVO_API_KEY! });
 
+// Load this from your authenticated server-side user record, not the request body.
+const auth = authevo.bindPhone(session.user.verifiedPhone);
+
 // 1. Send a code
-await authevo.otp.send({ phone: '+201234567890' });
+await auth.otp.send();
 
 // 2. Verify what the user entered
-const { verified } = await authevo.otp.verify({ phone: '+201234567890', code: '123456' });
+const { verified } = await auth.otp.verify({ code: '123456' });
 if (verified) {
   // sign the user in
 }
@@ -34,10 +37,10 @@ Or TOTP — a second, independent verification method (no send step, no message 
 ```ts
 // 1. Enroll once — show the QR to your user (any authenticator app: Google
 // Authenticator, Authy, 1Password) or let them type in the secret manually.
-const { qrCode, secret } = await authevo.totp.enroll({ phone: '+201234567890' });
+const { qrCode, secret } = await auth.totp.enroll();
 
 // 2. From then on, verify the rotating 6-digit code their app shows.
-const { verified } = await authevo.totp.verify({ phone: '+201234567890', code: '654321' });
+const { verified } = await auth.totp.verify({ code: '654321' });
 ```
 
 CommonJS works too:
@@ -74,6 +77,26 @@ await authevo.totp.verify({ phone: '+201234567890', code: /* from your app */ '6
 | `baseUrl`   | `string`          | `https://api.authevo.dev`   | override the API host.                             |
 | `timeoutMs` | `number`          | `30000`                     | per-request timeout.                              |
 | `fetch`     | `typeof fetch`    | global `fetch`              | inject a custom fetch (proxy/tests).              |
+
+### `bindPhone(phone)` → phone-bound client
+
+Use `bindPhone` in authenticated routes so callers cannot choose another user's phone
+on each OTP/TOTP operation. The phone must come from your trusted server-side session
+or user record; never pass `req.body.phone` directly. The returned client removes
+`phone` from every method and fixes all calls to the value supplied at binding time:
+
+```ts
+app.post('/account/totp/enroll', requireSession, async (req, res) => {
+  const phone = req.user.verifiedPhone; // loaded by requireSession from your database
+  const auth = authevo.bindPhone(phone);
+  res.json(await auth.totp.enroll());
+});
+```
+
+Your application owns its login session and user database, so the AuthEvo API cannot
+independently prove that a submitted phone belongs to that session. `bindPhone` makes
+the safe integration shape easy and prevents a later per-call phone override, but the
+trusted lookup at the boundary remains mandatory.
 
 ### `otp.send({ phone, idempotencyKey? })` → `{ messageId, status, expiresIn }`
 
@@ -186,15 +209,23 @@ Authevo POSTs delivery-status, low-balance, and Telegram-link events to your `we
 ```ts
 import { verifyWebhookV2, type WebhookEvent } from 'authevo';
 
-app.post('/webhooks/authevo', (req, res) => {
+app.post('/webhooks/authevo', async (req, res) => {
+  const deliveryId = req.header('X-Authevo-Id');
   const ok = verifyWebhookV2({
     payload: req.rawBody,                          // the raw request body (string/Buffer)
     signature: req.header('X-Authevo-Signature-V2'),
     timestamp: req.header('X-Authevo-Timestamp'),
-    id: req.header('X-Authevo-Id'),
+    id: deliveryId,
     secret: process.env.AUTHEVO_WEBHOOK_SECRET!,
   });
   if (!ok) return res.sendStatus(401);
+
+  // Atomically claim this delivery ID in durable storage. Example Redis contract:
+  // SET authevo:webhook:<deliveryId> 1 NX EX 86400
+  // A duplicate is authentic but must not run business logic twice. Return 200 so
+  // Authevo considers the retry delivered.
+  const firstDelivery = await deliveryIds.claimOnce(deliveryId!, { ttlSeconds: 86_400 });
+  if (!firstDelivery) return res.sendStatus(200);
 
   const event = JSON.parse(req.rawBody.toString()) as WebhookEvent;
   if (event.event === 'otp.status_update') {
@@ -208,7 +239,7 @@ app.post('/webhooks/authevo', (req, res) => {
 });
 ```
 
-`verifyWebhookV2` uses a constant-time comparison, rejects timestamps older/newer than five minutes, and returns `false` rather than throwing. The legacy body-only `verifyWebhook` remains available during migration.
+`verifyWebhookV2` uses a constant-time comparison, rejects timestamps older/newer than five minutes, and returns `false` rather than throwing. Signature verification prevents forged or stale requests; the delivery-ID claim prevents a valid retry from being processed twice. Use a shared Redis/database uniqueness primitive in production—not an in-memory set—so deduplication survives restarts and works across instances. The legacy body-only `verifyWebhook` remains available during migration.
 
 The complete event union is:
 

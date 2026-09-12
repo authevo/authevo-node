@@ -3,6 +3,16 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.0 (2026-09-12)
+
+- Add `Authevo.bindPhone(phone)`, a phone-bound OTP/TOTP client intended for
+  authenticated server routes. Its operations no longer accept a phone and runtime
+  attempts to inject an alternate phone are ignored.
+- Document the required trust boundary: load the phone from the application's
+  authenticated server-side user record, never directly from request input.
+- Extend the webhook receiver example with durable, atomic delivery-ID deduplication
+  and safe acknowledgement of authentic retries.
+
 ## 0.4.0 (2026-09-12)
 
 - Add `verifyWebhookV2` and `Authevo.verifyWebhookV2` for the API's new

@@ -2,6 +2,7 @@ import { AuthevoError } from './errors.js';
 import { verifyWebhook, verifyWebhookV2 } from './webhooks.js';
 import type {
   AuthevoOptions,
+  BoundPhoneClient,
   DeliverResult,
   SendResult,
   StatusResult,
@@ -21,6 +22,9 @@ export type {
 } from './webhooks.js';
 export type {
   AuthevoOptions,
+  BoundOtpClient,
+  BoundPhoneClient,
+  BoundTotpClient,
   ClientTier,
   DeliverResult,
   OtpChannel,
@@ -212,6 +216,45 @@ export class Authevo {
       return { disabled: d.disabled };
     },
   };
+
+  /**
+   * Return OTP/TOTP operations permanently bound to one phone number.
+   *
+   * Use a phone loaded from your authenticated server-side user record. This removes
+   * `phone` from each operation's arguments and ignores any runtime attempt to smuggle
+   * in a replacement phone. AuthEvo cannot determine whether the value you pass here
+   * came from a trusted session, so never bind directly from `req.body.phone`.
+   */
+  bindPhone(phone: string): BoundPhoneClient {
+    assertPhone(phone);
+
+    const bound: BoundPhoneClient = {
+      otp: {
+        send: (params) => this.otp.send({
+          phone,
+          ...(params?.idempotencyKey !== undefined ? { idempotencyKey: params.idempotencyKey } : {}),
+        }),
+        verify: (params) => this.otp.verify({ phone, code: params.code }),
+        deliver: (params) => this.otp.deliver({
+          phone,
+          code: params.code,
+          ...(params.idempotencyKey !== undefined ? { idempotencyKey: params.idempotencyKey } : {}),
+        }),
+      },
+      totp: {
+        enroll: (params) => this.totp.enroll({
+          phone,
+          ...(params?.replace !== undefined ? { replace: params.replace } : {}),
+        }),
+        verify: (params) => this.totp.verify({ phone, code: params.code }),
+        disable: () => this.totp.disable({ phone }),
+      },
+    };
+
+    Object.freeze(bound.otp);
+    Object.freeze(bound.totp);
+    return Object.freeze(bound);
+  }
 
   /** Verify an incoming webhook's `X-Authevo-Signature`. Also exported standalone as
    *  `verifyWebhook` — exposed here for discoverability. See {@link verifyWebhook}. */

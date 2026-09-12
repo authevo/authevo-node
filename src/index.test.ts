@@ -139,6 +139,53 @@ describe('Authevo', () => {
     });
   });
 
+  it('bindPhone fixes OTP and TOTP calls to one validated phone', async () => {
+    const { client, calls } = withFetch((url) => {
+      if (url.endsWith('/otp/send')) return ok({ message_id: 'm1', status: 'sent', expires_in: 300 });
+      if (url.endsWith('/otp/verify')) return ok({ verified: true });
+      if (url.endsWith('/otp/deliver')) return ok({ message_id: 'm2', status: 'sent' });
+      if (url.endsWith('/totp/enroll')) {
+        return ok({ secret: 'ABC', otpauth_url: 'otpauth://totp/x', qr_code: 'qr', already_enrolled: false });
+      }
+      if (url.endsWith('/totp/verify')) return ok({ verified: true });
+      return ok({ disabled: true });
+    });
+    const bound = client.bindPhone('+201234567890');
+
+    await bound.otp.send({ idempotencyKey: 'send-1' });
+    await bound.otp.verify({ code: '123456' });
+    await bound.otp.deliver({ code: '654321', idempotencyKey: 'deliver-1' });
+    await bound.totp.enroll({ replace: true });
+    await bound.totp.verify({ code: '123456' });
+    await bound.totp.disable();
+
+    expect(calls.map(({ init }) => JSON.parse(init.body as string))).toEqual([
+      { phone: '+201234567890' },
+      { phone: '+201234567890', code: '123456' },
+      { phone: '+201234567890', code: '654321' },
+      { phone: '+201234567890', replace: true },
+      { phone: '+201234567890', code: '123456' },
+      { phone: '+201234567890' },
+    ]);
+  });
+
+  it('bindPhone rejects an invalid identity before any request', () => {
+    const { client, calls } = withFetch(() => ok({}));
+    expect(() => client.bindPhone('01234')).toThrowError(AuthevoError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('bindPhone ignores runtime phone overrides instead of crossing identities', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    const bound = client.bindPhone('+201234567890');
+
+    await bound.otp.send({ phone: '+447700900123', idempotencyKey: 'safe' } as never);
+
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890' });
+    expect(Object.isFrozen(bound)).toBe(true);
+    expect(Object.isFrozen(bound.otp)).toBe(true);
+  });
+
   it('honors a custom baseUrl (trailing slash trimmed)', async () => {
     const calls: string[] = [];
     const client = new Authevo({
