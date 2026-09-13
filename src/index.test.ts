@@ -41,10 +41,15 @@ describe('Authevo', () => {
 
   it('otp.status GETs by id and maps created_at', async () => {
     const { client, calls } = withFetch(() =>
-      ok({ status: 'verified', channel: 'whatsapp', created_at: '2026-07-18T00:00:00Z' }),
+      ok({ status: 'failed', channel: 'whatsapp', failure_reason: 'recipient_rate_limited', provider_error_code: 131056, created_at: '2026-07-18T00:00:00Z' }),
     );
     const res = await client.otp.status('m 1/x');
-    expect(res.createdAt).toBe('2026-07-18T00:00:00Z');
+    expect(res).toMatchObject({
+      status: 'failed',
+      failureReason: 'recipient_rate_limited',
+      providerErrorCode: 131056,
+      createdAt: '2026-07-18T00:00:00Z',
+    });
     expect(calls[0]!.url).toBe('https://api.authevo.dev/v1/otp/status/m%201%2Fx'); // encoded
     expect(calls[0]!.init.method).toBe('GET');
   });
@@ -58,7 +63,7 @@ describe('Authevo', () => {
   it('throws AuthevoError with the API code + 429 retryAfter', async () => {
     const { client } = withFetch(
       () =>
-        new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_EXCEEDED', message: 'slow down' } }), {
+        new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_EXCEEDED', message: 'slow down', reason: 'client_recipient', limit: 3, window_seconds: 600 } }), {
           status: 429,
           headers: { 'content-type': 'application/json', 'retry-after': '42' },
         }),
@@ -67,6 +72,9 @@ describe('Authevo', () => {
       code: 'RATE_LIMIT_EXCEEDED',
       status: 429,
       retryAfter: 42,
+      reason: 'client_recipient',
+      limit: 3,
+      windowSeconds: 600,
     });
   });
 

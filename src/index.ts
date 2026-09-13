@@ -170,11 +170,23 @@ export class Authevo {
 
     /** Look up the delivery status of a previous send by its `messageId`. */
     status: async (messageId: string): Promise<StatusResult> => {
-      const d = await this.#request<{ status: StatusResult['status']; channel: StatusResult['channel']; created_at: string }>(
+      const d = await this.#request<{
+        status: StatusResult['status'];
+        channel: StatusResult['channel'];
+        failure_reason?: string | null;
+        provider_error_code?: number | null;
+        created_at: string;
+      }>(
         'GET',
         `/v1/otp/status/${encodeURIComponent(messageId)}`,
       );
-      return { status: d.status, channel: d.channel, createdAt: d.created_at };
+      return {
+        status: d.status,
+        channel: d.channel,
+        failureReason: d.failure_reason ?? undefined,
+        providerErrorCode: d.provider_error_code ?? undefined,
+        createdAt: d.created_at,
+      };
     },
   };
 
@@ -295,7 +307,14 @@ export class Authevo {
     if (!res.ok) {
       const envelope =
         json && typeof json === 'object' && 'error' in json
-          ? (json as { error?: { code?: string; message?: string; telegram_bot_url?: string } }).error
+          ? (json as { error?: {
+              code?: string;
+              message?: string;
+              telegram_bot_url?: string;
+              reason?: string;
+              limit?: number;
+              window_seconds?: number;
+            } }).error
           : undefined;
       const retryAfter =
         res.status === 429 ? parseRetryAfter(res.headers.get('retry-after')) : undefined;
@@ -307,6 +326,11 @@ export class Authevo {
         // Carried on CHANNEL_NOT_LINKED. Single-use and minted per failure, so dropping
         // it here (as this SDK did) made the documented Telegram fallback unimplementable.
         typeof envelope?.telegram_bot_url === 'string' ? envelope.telegram_bot_url : undefined,
+        {
+          reason: typeof envelope?.reason === 'string' ? envelope.reason : undefined,
+          limit: typeof envelope?.limit === 'number' ? envelope.limit : undefined,
+          windowSeconds: typeof envelope?.window_seconds === 'number' ? envelope.window_seconds : undefined,
+        },
       );
     }
 

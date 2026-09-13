@@ -79,6 +79,10 @@ export interface BoundPhoneClient {
 export interface StatusResult {
   status: OtpStatus;
   channel: OtpChannel;
+  /** Customer-safe category when `status === 'failed'`. */
+  failureReason?: string;
+  /** Numeric Meta error reference; safe to include in a support request. */
+  providerErrorCode?: number;
   /** ISO-8601 timestamp. */
   createdAt: string;
 }

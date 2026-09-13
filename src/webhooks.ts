@@ -6,6 +6,10 @@ export interface OtpStatusUpdateEvent {
   /** The Meta/WhatsApp message id this status belongs to. */
   meta_message_id: string;
   status: 'delivered' | 'read' | 'failed';
+  /** Present on failed events: a stable, customer-safe cause category. */
+  failure_reason?: string;
+  /** Present when Meta supplied a numeric failure code. */
+  provider_error_code?: number | null;
 }
 
 /** An `account.low_balance` webhook — fired after a send when your balance drops below the floor. */
