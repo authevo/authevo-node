@@ -100,8 +100,24 @@ export function verifyWebhookV2(params: {
   toleranceSeconds?: number;
   nowMs?: number;
 }): boolean {
+  if (!params || typeof params !== 'object') return false;
   const { payload, signature, timestamp, id, secret } = params;
-  if (!secret || !signature?.startsWith('sha256=') || !timestamp || !id) return false;
+  // This is exported JavaScript as well as TypeScript. Validate every value before invoking
+  // a string method, interpolation, or crypto API so malformed caller input follows the
+  // documented false-not-throw contract.
+  if (
+    typeof secret !== 'string' || secret.length === 0 ||
+    typeof signature !== 'string' || !signature.startsWith('sha256=') ||
+    typeof timestamp !== 'string' || timestamp.length === 0 ||
+    typeof id !== 'string' || id.length === 0 ||
+    (typeof payload !== 'string' && !(payload instanceof Uint8Array))
+  ) return false;
+  if (
+    (params.toleranceSeconds !== undefined &&
+      (typeof params.toleranceSeconds !== 'number' || !Number.isFinite(params.toleranceSeconds))) ||
+    (params.nowMs !== undefined &&
+      (typeof params.nowMs !== 'number' || !Number.isFinite(params.nowMs)))
+  ) return false;
   if (!/^\d{10,}$/.test(timestamp)) return false;
   const timestampMs = Number(timestamp) * 1000;
   const toleranceMs = Math.max(0, params.toleranceSeconds ?? 300) * 1000;

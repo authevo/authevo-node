@@ -65,6 +65,34 @@ describe('verifyWebhookV2', () => {
     expect(verifyWebhookV2({ payload: `${BODY} `, signature, timestamp, id, secret: SECRET, nowMs })).toBe(false);
     expect(verifyWebhookV2({ payload: BODY, signature, timestamp, id: 'evt_other', secret: SECRET, nowMs })).toBe(false);
   });
+
+  it('rejects out-of-contract JavaScript values without throwing', () => {
+    const valid = { payload: BODY, signature, timestamp, id, secret: SECRET, nowMs };
+    const invalidValues: Array<Record<string, unknown>> = [
+      { signature: 42 },
+      { signature: {} },
+      { signature: [] },
+      { signature: Symbol('signature') },
+      { secret: 42 },
+      { payload: {} },
+      { id: Symbol('id') },
+      { toleranceSeconds: Number.NaN },
+      { toleranceSeconds: Number.POSITIVE_INFINITY },
+      { nowMs: Number.NaN },
+    ];
+
+    for (const invalid of invalidValues) {
+      const params = { ...valid, ...invalid } as unknown as Parameters<typeof verifyWebhookV2>[0];
+      expect(() => verifyWebhookV2(params)).not.toThrow();
+      expect(verifyWebhookV2(params)).toBe(false);
+    }
+
+    for (const invalidParams of [null, undefined, 42]) {
+      const params = invalidParams as unknown as Parameters<typeof verifyWebhookV2>[0];
+      expect(() => verifyWebhookV2(params)).not.toThrow();
+      expect(verifyWebhookV2(params)).toBe(false);
+    }
+  });
 });
 
 describe('S3-005 regression — hostile multi-byte signature never throws', () => {
