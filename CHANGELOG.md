@@ -3,6 +3,15 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.1 (2026-09-21)
+
+- Fix `verifyWebhook` and `verifyWebhookV2` so malformed non-ASCII signatures
+  return `false` instead of throwing an uncaught `RangeError`.
+- Validate signatures as exactly 64 lowercase hexadecimal characters and compare
+  the decoded digest bytes in constant time.
+- Make `verifyWebhookV2` return `false` (rather than throw) for invalid
+  JavaScript runtime input types and non-finite replay-window values.
+
 ## 0.5.0 (2026-09-12)
 
 - Add `Authevo.bindPhone(phone)`, a phone-bound OTP/TOTP client intended for
