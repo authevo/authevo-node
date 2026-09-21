@@ -77,10 +77,13 @@ export function verifyWebhook(params: {
 
   const expected = createHmac('sha256', secret).update(payload).digest('hex');
   const received = signature.slice(7);
-  // Compare the hex digests in constant time (length check first — timingSafeEqual throws on
-  // a length mismatch). Mirrors exactly how the API verifies its own inbound signatures.
-  if (expected.length !== received.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+  // Reject anything that isn't a well-formed hex digest before decoding — this both rejects
+  // malformed input explicitly and guarantees expected/received decode to equal-length byte
+  // buffers, so timingSafeEqual (below) can never throw on a length mismatch. Decode both as
+  // real hex bytes, not UTF-8 text, so non-ASCII input can't desync JS string length from byte
+  // length. Mirrors exactly how the API verifies its own inbound signatures.
+  if (!/^[0-9a-f]{64}$/.test(received)) return false;
+  return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'));
 }
 
 /**
@@ -109,6 +112,8 @@ export function verifyWebhookV2(params: {
   hmac.update(payload);
   const expected = hmac.digest('hex');
   const received = signature.slice(7);
-  if (expected.length !== received.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+  // Same hex-decode fix as verifyWebhook above: reject non-hex-shaped input up front and decode
+  // both digests as real bytes so timingSafeEqual can never throw.
+  if (!/^[0-9a-f]{64}$/.test(received)) return false;
+  return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'));
 }

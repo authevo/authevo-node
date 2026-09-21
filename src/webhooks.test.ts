@@ -67,6 +67,41 @@ describe('verifyWebhookV2', () => {
   });
 });
 
+describe('S3-005 regression — hostile multi-byte signature never throws', () => {
+  // A signature whose JS `.length` (UTF-16 code units) equals the expected 64-char hex digest
+  // length, but whose UTF-8 byte length does not (any code point above U+007F is 2+ UTF-8
+  // bytes). Before the fix, `Buffer.from(str)` (default utf8 encoding) desynced the byte length
+  // actually passed to timingSafeEqual from the JS-string-length pre-check, throwing an uncaught
+  // RangeError instead of returning `false` as documented.
+  const hostileSignature = 'sha256=' + 'é'.repeat(64);
+  // Byte-identical-length ASCII control: same 64-char length, wrong value, pure ASCII. Isolates
+  // the bug to the UTF-16-vs-UTF-8 divergence specifically, not to signature correctness.
+  const asciiWrongSignature = 'sha256=' + 'f'.repeat(64);
+
+  it('verifyWebhook returns false, never throws, on a hostile non-ASCII signature', () => {
+    expect(() =>
+      verifyWebhook({ payload: BODY, signature: hostileSignature, secret: SECRET })
+    ).not.toThrow();
+    expect(verifyWebhook({ payload: BODY, signature: hostileSignature, secret: SECRET })).toBe(false);
+  });
+
+  it('verifyWebhook returns false on the byte-identical-length ASCII control', () => {
+    expect(verifyWebhook({ payload: BODY, signature: asciiWrongSignature, secret: SECRET })).toBe(false);
+  });
+
+  it('verifyWebhookV2 returns false, never throws, on a hostile non-ASCII signature', () => {
+    const timestamp = '2000000000';
+    const id = 'evt_abc123';
+    const nowMs = Number(timestamp) * 1000;
+    expect(() =>
+      verifyWebhookV2({ payload: BODY, signature: hostileSignature, timestamp, id, secret: SECRET, nowMs })
+    ).not.toThrow();
+    expect(
+      verifyWebhookV2({ payload: BODY, signature: hostileSignature, timestamp, id, secret: SECRET, nowMs })
+    ).toBe(false);
+  });
+});
+
 describe('WebhookEvent', () => {
   it('covers all three documented webhook event payloads', () => {
     const events: WebhookEvent[] = [
