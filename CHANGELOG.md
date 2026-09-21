@@ -9,6 +9,8 @@ All notable changes to `authevo` are documented here. This project follows
   return `false` instead of throwing an uncaught `RangeError`.
 - Validate signatures as exactly 64 lowercase hexadecimal characters and compare
   the decoded digest bytes in constant time.
+- Make `verifyWebhookV2` return `false` (rather than throw) for invalid
+  JavaScript runtime input types and non-finite replay-window values.
 
 ## 0.5.0 (2026-09-12)
 
