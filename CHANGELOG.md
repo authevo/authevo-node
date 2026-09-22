@@ -3,6 +3,14 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased (local candidate; not published)
+
+- Add `createIdempotencyKey()` for opaque, cryptographically random per-logical-send
+  keys. The helper does not change the SDK's default request behavior: callers must
+  persist and reuse one key for retries, while a deliberate resend needs a new key.
+- Clarify retry guidance for `/send` and `/deliver`, including identical delivery
+  bodies, the 24-hour recorded-result window, and the risk of an unknown outcome.
+
 ## 0.5.1 (2026-09-21)
 
 - Fix `verifyWebhook` and `verifyWebhookV2` so malformed non-ASCII signatures
