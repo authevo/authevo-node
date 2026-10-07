@@ -31,6 +31,29 @@ describe('Authevo', () => {
     expect((calls[0]!.init.headers as Record<string, string>).Authorization).toBe('Bearer sk_test');
   });
 
+  it('otp.send and otp.deliver forward an explicit language', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    await client.otp.send({ phone: '+201234567890', language: 'ar' });
+    await client.otp.deliver({ phone: '+201234567890', code: '123456', language: 'en' });
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890', language: 'ar' });
+    expect(JSON.parse(calls[1]!.init.body as string)).toEqual({ phone: '+201234567890', code: '123456', language: 'en' });
+  });
+
+  it('otp.deliver without a language sends no language key (body unchanged for existing callers)', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm2', status: 'sent' }));
+    await client.otp.deliver({ phone: '+201234567890', code: '123456' });
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890', code: '123456' });
+  });
+
+  it('bindPhone forwards language on send and deliver', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm3', status: 'sent', expires_in: 300 }));
+    const bound = client.bindPhone('+201234567890');
+    await bound.otp.send({ language: 'ar' });
+    await bound.otp.deliver({ code: '123456', language: 'ar' });
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890', language: 'ar' });
+    expect(JSON.parse(calls[1]!.init.body as string)).toEqual({ phone: '+201234567890', code: '123456', language: 'ar' });
+  });
+
   it('otp.verify maps attempts_remaining', async () => {
     const { client } = withFetch(() => ok({ verified: false, attempts_remaining: 3 }));
     expect(await client.otp.verify({ phone: '+201234567890', code: '000000' })).toEqual({

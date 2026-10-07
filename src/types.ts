@@ -4,6 +4,10 @@ export type OtpChannel = 'whatsapp' | 'telegram';
 /** Lifecycle status of an OTP request. `expired` is derived once the code's TTL passes. */
 export type OtpStatus = 'sent' | 'delivered' | 'read' | 'verified' | 'failed' | 'expired';
 
+/** WhatsApp OTP message language. Omit it to use your account's saved template language
+ *  (else `'en'`). Any other value is rejected by the API with a 400. */
+export type OtpLanguage = 'en' | 'ar';
+
 /** Billing tier. `ppsa` = pay per successful auth; `per_message` = charged at send time. */
 export type ClientTier = 'ppsa' | 'per_message';
 
@@ -55,9 +59,9 @@ export interface TotpDisableResult {
 
 /** OTP operations whose destination is fixed by `Authevo.bindPhone()`. */
 export interface BoundOtpClient {
-  send(params?: { idempotencyKey?: string }): Promise<SendResult>;
+  send(params?: { idempotencyKey?: string; language?: OtpLanguage }): Promise<SendResult>;
   verify(params: { code: string }): Promise<VerifyResult>;
-  deliver(params: { code: string; idempotencyKey?: string }): Promise<DeliverResult>;
+  deliver(params: { code: string; idempotencyKey?: string; language?: OtpLanguage }): Promise<DeliverResult>;
 }
 
 /** TOTP operations whose identity is fixed by `Authevo.bindPhone()`. */
