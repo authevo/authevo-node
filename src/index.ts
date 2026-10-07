@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { AuthevoError } from './errors.js';
 import { verifyWebhook, verifyWebhookV2 } from './webhooks.js';
 import type {
@@ -41,6 +42,16 @@ const DEFAULT_BASE_URL = 'https://api.authevo.dev';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const E164 = /^\+[1-9]\d{6,14}$/;
 const IDEMPOTENCY_KEY = /^[\x21-\x7E]{1,255}$/;
+
+/**
+ * Create a cryptographically random key for ONE logical OTP send or delivery.
+ * Persist and reuse it when retrying that operation; call this again only for a
+ * deliberate new send. The SDK cannot infer whether two calls are a retry or a
+ * new user request, so it never silently generates a new key per call.
+ */
+export function createIdempotencyKey(): string {
+  return randomUUID();
+}
 
 /** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds. */
 function parseRetryAfter(header: string | null): number | undefined {
@@ -118,15 +129,13 @@ export class Authevo {
   readonly otp = {
     /** Generate and deliver a one-time code to `phone`. Backend picks the channel.
      *
-     * `idempotencyKey` makes a retry safe. This is a CHARGED call that also sends a real
-     * message, so retrying after a timeout without one delivers a second code AND bills
-     * you twice — and a timeout is exactly when you cannot tell whether the first attempt
-     * landed. Reuse the SAME key for every retry of the same logical send (a fresh key per
-     * attempt buys nothing); within 24h the API replays the original response instead of
-     * re-running the send. A concurrent retry gets 409 `IDEMPOTENCY_KEY_IN_PROGRESS`.
+     * A send can incur a customer or provider charge. Reuse the SAME key on every
+     * retry of one logical send; a fresh key permits another send and charge.
+     * A recorded response can be replayed for 24h. If the server's outcome is
+     * unresolved, do not assume a timeout means no message was sent.
      *
      * ```ts
-     * const key = crypto.randomUUID();          // once per login attempt, NOT per retry
+     * const key = createIdempotencyKey(); // persist with the login attempt
      * await authevo.otp.send({ phone, idempotencyKey: key });
      * ```
      */

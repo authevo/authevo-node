@@ -102,7 +102,8 @@ trusted lookup at the boundary remains mandatory.
 
 Generates and delivers a one-time code. `phone` must be [E.164](https://en.wikipedia.org/wiki/E.164) (e.g. `+201234567890`).
 
-`idempotencyKey` makes a retry safe — see [Retries and idempotency](#retries-and-idempotency).
+Pass one `idempotencyKey` per logical send and reuse it if that same request must be
+retried — see [Retries and idempotency](#retries-and-idempotency).
 
 ### `otp.verify({ phone, code })` → `{ verified, attemptsRemaining? }`
 
@@ -132,33 +133,40 @@ Turns TOTP off for a phone — soft and idempotent. A disabled phone's `verify` 
 
 ## Retries and idempotency
 
-`otp.send` and `otp.deliver` both **cost money and send a real message**. A timeout is
-precisely the case where you cannot tell whether the first attempt landed, so retrying
-without an idempotency key delivers a second code to the recipient *and* bills you twice.
+Live `otp.send` and `otp.deliver` can incur a customer or provider charge and send a
+real message. A timeout does **not** establish that no message was sent. A new request
+without the original idempotency key can send another message and incur another charge.
 
-Pass an `idempotencyKey` and reuse the **same** key for every retry of the same logical
-operation. Within 24 hours the API replays the original response instead of re-running
-the send. A fresh key per attempt buys you nothing — the key is what ties the retry to
-the original.
+`createIdempotencyKey()` produces an opaque, cryptographically random UUID. Create and
+persist one key **before** the first call for each logical login or delivery attempt;
+reuse the **same** key and identical request body for its retries, even after a process
+restart. The API can replay a recorded result for 24 hours. A retry while the first
+request is processing returns `IDEMPOTENCY_KEY_IN_PROGRESS` (HTTP 409); wait and retry
+with the same key. If the outcome remains unknown, do not create a new key to force
+another send. The SDK does not generate a key automatically because it cannot know
+whether a later method call is a retry or a deliberate new send.
+The key is not proof that WhatsApp delivered the message, or an unconditional
+exactly-once guarantee if the API could not durably record its result; pause and
+reconcile an unresolved outcome instead of looping.
 
 ```ts
-// One key per login attempt — generated BEFORE the first try, reused on every retry.
-const idempotencyKey = crypto.randomUUID();
+import { createIdempotencyKey } from 'authevo';
 
-async function sendWithRetry(phone: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await authevo.otp.send({ phone, idempotencyKey });
-    } catch (err) {
-      if (err instanceof AuthevoError && err.code === 'network_error' && attempt < 2) continue;
-      throw err;
-    }
-  }
-}
+// Create and store this with your login-attempt record before the first call.
+const idempotencyKey = createIdempotencyKey();
+const request = { phone, idempotencyKey };
+await authevo.otp.send(request);
+
+// If the application later retries this SAME attempt, load the stored key
+// and use the identical body: await authevo.otp.send(request).
+// A network timeout alone is not a reason to create a new key or auto-resend.
 ```
 
-A retry that races the original (the first call is still in flight) rejects with
-`IDEMPOTENCY_KEY_IN_PROGRESS` (HTTP 409) — wait and retry with the same key.
+For `otp.deliver`, also reuse the same `code` with the key; changing the body with the
+same key is rejected. A **deliberate resend** is a new operation: only after your
+cooldown, consent and spend checks, create a *new* key. It may send and bill again.
+Never derive a key solely from the phone number or keep one key for every login by
+the same user; that would incorrectly collapse independent requests.
 
 The key must be 1–255 printable ASCII characters; a UUID is a good choice.
 

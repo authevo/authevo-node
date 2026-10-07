@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Authevo, AuthevoError } from './index.js';
+import { Authevo, AuthevoError, createIdempotencyKey } from './index.js';
 
 /** Build a client whose fetch returns a canned response, capturing the request. */
 function withFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
@@ -209,9 +209,17 @@ describe('Authevo', () => {
   });
 
   // ── Idempotency-Key ───────────────────────────────────────────────────────────
-  // /otp/send and /otp/deliver are charged AND send a real message. The API has
-  // honoured Idempotency-Key on both since B5; this SDK never sent it, so the retry
-  // every integrator writes after a timeout double-sent and double-charged.
+  // /otp/send and /otp/deliver may send a real message and incur cost. The API
+  // accepts Idempotency-Key on both; SDK callers must preserve one key per
+  // logical operation because the SDK cannot identify a later call as a retry.
+
+  it('creates opaque, cryptographically random UUID keys without a phone or request body', () => {
+    const first = createIdempotencyKey();
+    const second = createIdempotencyKey();
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(second).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(second).not.toBe(first);
+  });
 
   it('otp.send sends no Idempotency-Key header when none is given', async () => {
     const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
@@ -238,6 +246,39 @@ describe('Authevo', () => {
     await client.otp.deliver({ phone: '+201234567890', code: '123456', idempotencyKey: 'k2' });
     expect((calls[0]!.init.headers as Record<string, string>)['Idempotency-Key']).toBe('k2');
     expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ phone: '+201234567890', code: '123456' });
+  });
+
+  it('reuses one supplied key for retries of the same logical send', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    const key = createIdempotencyKey();
+    await client.otp.send({ phone: '+201234567890', idempotencyKey: key });
+    await client.otp.send({ phone: '+201234567890', idempotencyKey: key });
+    expect(calls.map(({ init }) => (init.headers as Record<string, string>)['Idempotency-Key'])).toEqual([key, key]);
+  });
+
+  it('uses a different key for an explicit new send, never deriving one from the phone', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm1', status: 'sent', expires_in: 300 }));
+    const originalAttempt = createIdempotencyKey();
+    const deliberateResend = createIdempotencyKey();
+    await client.otp.send({ phone: '+201234567890', idempotencyKey: originalAttempt });
+    await client.otp.send({ phone: '+201234567890', idempotencyKey: deliberateResend });
+    expect(calls.map(({ init }) => (init.headers as Record<string, string>)['Idempotency-Key'])).toEqual([
+      originalAttempt,
+      deliberateResend,
+    ]);
+  });
+
+  it('reuses one supplied key for delivery-only retries, including the same code body', async () => {
+    const { client, calls } = withFetch(() => ok({ message_id: 'm2', status: 'sent' }));
+    const key = createIdempotencyKey();
+    const request = { phone: '+201234567890', code: '123456', idempotencyKey: key };
+    await client.otp.deliver(request);
+    await client.otp.deliver(request);
+    expect(calls.map(({ init }) => (init.headers as Record<string, string>)['Idempotency-Key'])).toEqual([key, key]);
+    expect(calls.map(({ init }) => init.body)).toEqual([
+      JSON.stringify({ phone: request.phone, code: request.code }),
+      JSON.stringify({ phone: request.phone, code: request.code }),
+    ]);
   });
 
   it('rejects a header-unsafe idempotencyKey before any request is made', async () => {
