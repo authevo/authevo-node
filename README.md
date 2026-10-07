@@ -98,9 +98,12 @@ independently prove that a submitted phone belongs to that session. `bindPhone` 
 the safe integration shape easy and prevents a later per-call phone override, but the
 trusted lookup at the boundary remains mandatory.
 
-### `otp.send({ phone, idempotencyKey? })` → `{ messageId, status, expiresIn }`
+### `otp.send({ phone, idempotencyKey?, language? })` → `{ messageId, status, expiresIn }`
 
 Generates and delivers a one-time code. `phone` must be [E.164](https://en.wikipedia.org/wiki/E.164) (e.g. `+201234567890`).
+
+`language` (`'en'` or `'ar'`) picks the WhatsApp message language. Omit it to use your
+account's saved template language, else English. Any other value is rejected with a 400.
 
 Pass one `idempotencyKey` per logical send and reuse it if that same request must be
 retried — see [Retries and idempotency](#retries-and-idempotency).
@@ -109,9 +112,10 @@ retried — see [Retries and idempotency](#retries-and-idempotency).
 
 Checks a code. `verified: false` means wrong or expired; `attemptsRemaining` counts down to a temporary block.
 
-### `otp.deliver({ phone, code, idempotencyKey? })` → `{ messageId, status }`
+### `otp.deliver({ phone, code, idempotencyKey?, language? })` → `{ messageId, status }`
 
 Deliver a code **you** generated (e.g. from another auth provider) — no verify step.
+`language` works as on `send`.
 Charged per send on every tier, so `idempotencyKey` matters here for the same reason
 it does on `send` — see [Retries and idempotency](#retries-and-idempotency).
 

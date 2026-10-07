@@ -5,6 +5,7 @@ import type {
   AuthevoOptions,
   BoundPhoneClient,
   DeliverResult,
+  OtpLanguage,
   SendResult,
   StatusResult,
   TotpDisableResult,
@@ -29,6 +30,7 @@ export type {
   ClientTier,
   DeliverResult,
   OtpChannel,
+  OtpLanguage,
   OtpStatus,
   SendResult,
   StatusResult,
@@ -137,15 +139,16 @@ export class Authevo {
      * ```ts
      * const key = createIdempotencyKey(); // persist with the login attempt
      * await authevo.otp.send({ phone, idempotencyKey: key });
+     * await authevo.otp.send({ phone, language: 'ar' }); // Arabic WhatsApp message
      * ```
      */
-    send: async (params: { phone: string; idempotencyKey?: string }): Promise<SendResult> => {
+    send: async (params: { phone: string; idempotencyKey?: string; language?: OtpLanguage }): Promise<SendResult> => {
       assertPhone(params.phone);
       if (params.idempotencyKey !== undefined) assertIdempotencyKey(params.idempotencyKey);
       const d = await this.#request<{ message_id: string; status: string; expires_in: number }>(
         'POST',
         '/v1/otp/send',
-        { phone: params.phone },
+        { phone: params.phone, ...(params.language !== undefined ? { language: params.language } : {}) },
         params.idempotencyKey,
       );
       return { messageId: d.message_id, status: d.status, expiresIn: d.expires_in };
@@ -165,13 +168,13 @@ export class Authevo {
     /** Deliver a code YOU generated (e.g. from another auth provider) — no verify step.
      *  Charged per send on every tier, so `idempotencyKey` matters here for the same
      *  reason it does on `send` — see the note there. */
-    deliver: async (params: { phone: string; code: string; idempotencyKey?: string }): Promise<DeliverResult> => {
+    deliver: async (params: { phone: string; code: string; idempotencyKey?: string; language?: OtpLanguage }): Promise<DeliverResult> => {
       assertPhone(params.phone);
       if (params.idempotencyKey !== undefined) assertIdempotencyKey(params.idempotencyKey);
       const d = await this.#request<{ message_id: string; status: string }>(
         'POST',
         '/v1/otp/deliver',
-        { phone: params.phone, code: params.code },
+        { phone: params.phone, code: params.code, ...(params.language !== undefined ? { language: params.language } : {}) },
         params.idempotencyKey,
       );
       return { messageId: d.message_id, status: d.status };
@@ -254,12 +257,14 @@ export class Authevo {
         send: (params) => this.otp.send({
           phone,
           ...(params?.idempotencyKey !== undefined ? { idempotencyKey: params.idempotencyKey } : {}),
+          ...(params?.language !== undefined ? { language: params.language } : {}),
         }),
         verify: (params) => this.otp.verify({ phone, code: params.code }),
         deliver: (params) => this.otp.deliver({
           phone,
           code: params.code,
           ...(params.idempotencyKey !== undefined ? { idempotencyKey: params.idempotencyKey } : {}),
+          ...(params.language !== undefined ? { language: params.language } : {}),
         }),
       },
       totp: {

@@ -5,6 +5,11 @@ All notable changes to `authevo` are documented here. This project follows
 
 ## Unreleased (local candidate; not published)
 
+- Add an optional `language` (`'en' | 'ar'`, exported as `OtpLanguage`) to `otp.send`,
+  `otp.deliver` and the `bindPhone()` equivalents, selecting the WhatsApp OTP message
+  language. Omitted, the request body is unchanged and the API uses the account's saved
+  template language, else English. Requires the API's O-01 release.
+
 - Add `createIdempotencyKey()` for opaque, cryptographically random per-logical-send
   keys. The helper does not change the SDK's default request behavior: callers must
   persist and reuse one key for retries, while a deliberate resend needs a new key.
