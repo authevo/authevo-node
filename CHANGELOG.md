@@ -3,7 +3,7 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased (local candidate; not published)
+## 0.6.0 (2026-10-07)
 
 - Add an optional `language` (`'en' | 'ar'`, exported as `OtpLanguage`) to `otp.send`,
   `otp.deliver` and the `bindPhone()` equivalents, selecting the WhatsApp OTP message
