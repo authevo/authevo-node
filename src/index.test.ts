@@ -62,6 +62,20 @@ describe('Authevo', () => {
     });
   });
 
+  it('otp.verify surfaces retry_after_seconds on the wrong guess that starts the block', async () => {
+    const { client } = withFetch(() => ok({ verified: false, attempts_remaining: 0, retry_after_seconds: 900 }));
+    const res = await client.otp.verify({ phone: '+201234567890', code: '000000' });
+    expect(res).toEqual({ verified: false, attemptsRemaining: 0, retryAfterSeconds: 900 });
+    expect(res.retryAfterSeconds).toBe(900);
+  });
+
+  it('otp.verify leaves retryAfterSeconds unset when the API omits it or sends a non-number', async () => {
+    const { client } = withFetch(() => ok({ verified: true }));
+    expect((await client.otp.verify({ phone: '+201234567890', code: '123456' })).retryAfterSeconds).toBeUndefined();
+    const odd = withFetch(() => ok({ verified: false, attempts_remaining: 0, retry_after_seconds: '900' }));
+    expect((await odd.client.otp.verify({ phone: '+201234567890', code: '000000' })).retryAfterSeconds).toBeUndefined();
+  });
+
   it('otp.status GETs by id and maps created_at', async () => {
     const { client, calls } = withFetch(() =>
       ok({ status: 'failed', channel: 'whatsapp', failure_reason: 'recipient_rate_limited', provider_error_code: 131056, created_at: '2026-07-18T00:00:00Z' }),

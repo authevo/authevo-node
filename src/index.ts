@@ -157,12 +157,16 @@ export class Authevo {
     /** Check a code the recipient entered. `verified: false` means wrong/expired. */
     verify: async (params: { phone: string; code: string }): Promise<VerifyResult> => {
       assertPhone(params.phone);
-      const d = await this.#request<{ verified: boolean; attempts_remaining?: number }>(
+      const d = await this.#request<{ verified: boolean; attempts_remaining?: number; retry_after_seconds?: number }>(
         'POST',
         '/v1/otp/verify',
         { phone: params.phone, code: params.code },
       );
-      return { verified: d.verified, attemptsRemaining: d.attempts_remaining };
+      return {
+        verified: d.verified,
+        attemptsRemaining: d.attempts_remaining,
+        retryAfterSeconds: typeof d.retry_after_seconds === 'number' ? d.retry_after_seconds : undefined,
+      };
     },
 
     /** Deliver a code YOU generated (e.g. from another auth provider) — no verify step.

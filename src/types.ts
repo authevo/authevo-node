@@ -24,6 +24,10 @@ export interface VerifyResult {
   verified: boolean;
   /** Present only on a wrong-code attempt — tries left before a temporary block. */
   attemptsRemaining?: number;
+  /** Present on the wrong guess that starts the temporary block (`attemptsRemaining: 0`):
+   *  seconds until this phone can verify again. Further verifies before then fail with a
+   *  429 `AuthevoError` whose `retryAfter` carries the remaining wait. */
+  retryAfterSeconds?: number;
 }
 
 export interface DeliverResult {
