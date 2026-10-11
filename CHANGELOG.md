@@ -3,6 +3,14 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.7.0 (2026-10-11)
+
+- `otp.verify` now returns `retryAfterSeconds` on the wrong guess that starts the
+  temporary verify block (`attemptsRemaining: 0`): the seconds until this phone can
+  verify again. It is optional and only set when the API sends a number, so existing
+  code is unaffected. Verifies during the block still throw a 429 `AuthevoError` whose
+  `retryAfter` carries the remaining wait.
+
 ## 0.6.0 (2026-10-07)
 
 - Add an optional `language` (`'en' | 'ar'`, exported as `OtpLanguage`) to `otp.send`,
