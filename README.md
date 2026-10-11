@@ -108,9 +108,11 @@ account's saved template language, else English. Any other value is rejected wit
 Pass one `idempotencyKey` per logical send and reuse it if that same request must be
 retried — see [Retries and idempotency](#retries-and-idempotency).
 
-### `otp.verify({ phone, code })` → `{ verified, attemptsRemaining? }`
+### `otp.verify({ phone, code })` → `{ verified, attemptsRemaining?, retryAfterSeconds? }`
 
 Checks a code. `verified: false` means wrong or expired; `attemptsRemaining` counts down to a temporary block.
+The wrong guess that starts the block also returns `retryAfterSeconds` (how long until this phone can verify
+again); verifies during the block throw a 429 `AuthevoError` whose `retryAfter` holds the remaining wait.
 
 ### `otp.deliver({ phone, code, idempotencyKey?, language? })` → `{ messageId, status }`
 
