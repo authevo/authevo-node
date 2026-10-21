@@ -10,8 +10,10 @@ All notable changes to `authevo` are documented here. This project follows
   API could not check your key for a moment (it was not rejected), so wait `retryAfter`
   seconds and retry, with the same `idempotencyKey` for a send. A response without the
   header still leaves it unset.
-- `retryAfter` is never below 1 s now: a `0`, negative or past value reads as 1, and a
-  blank header as unset (it used to read as 0, i.e. "retry at once").
+- `retryAfter` now stays within 1 s to 24 h (the API's own bounds): a `0` or past date
+  reads as 1 (it used to read as 0, "retry at once"), an absurd value is capped at
+  86400. A value that is neither seconds nor an HTTP-date (e.g. `-3`, `soon`, `5, 6`)
+  leaves it unset.
 
 ## 0.7.0 (2026-10-11)
 

@@ -55,16 +55,26 @@ export function createIdempotencyKey(): string {
   return randomUUID();
 }
 
-/** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds. Never
- *  0: a zero, negative, blank-padded or past value would read as "retry at once" and
- *  feed a tight loop during an outage; the API itself never asks for less than 1 s. */
+// Bounds for `retryAfter`, matching the API's own (1 s to 24 h). Below 1, "wait 0"
+// would feed a tight retry loop; above Node's setTimeout limit (~24.8 days) a timer
+// fires after 1 ms, which is the same loop.
+const MIN_RETRY_AFTER_SECONDS = 1;
+const MAX_RETRY_AFTER_SECONDS = 86_400;
+const clampRetryAfter = (seconds: number): number =>
+  Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(MIN_RETRY_AFTER_SECONDS, Math.ceil(seconds)));
+// RFC 9110 IMF-fixdate, e.g. "Sun, 06 Nov 1994 08:49:37 GMT" (what servers send).
+const HTTP_DATE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
+/** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds within
+ *  1 s..24 h. Anything else (junk, a merged "5, 6", a negative) is ignored: undefined. */
 function parseRetryAfter(header: string | null): number | undefined {
   const value = header?.trim();
   if (!value) return undefined;
-  const secs = Number(value);
-  if (Number.isFinite(secs)) return Math.max(1, Math.ceil(secs));
-  const date = Date.parse(value);
-  if (!Number.isNaN(date)) return Math.max(1, Math.ceil((date - Date.now()) / 1000));
+  if (/^\d+(\.\d+)?$/.test(value)) return clampRetryAfter(Number(value));
+  if (HTTP_DATE.test(value)) {
+    const date = Date.parse(value);
+    if (!Number.isNaN(date)) return clampRetryAfter((date - Date.now()) / 1000);
+  }
   return undefined;
 }
 

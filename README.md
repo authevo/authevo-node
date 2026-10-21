@@ -199,13 +199,16 @@ try {
 
 Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `AUTH_UNAVAILABLE`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), `IDEMPOTENCY_KEY_IN_PROGRESS`, plus client-side `invalid_phone` / `invalid_config` / `invalid_idempotency_key` / `network_error`.
 
-`AUTH_UNAVAILABLE` (status 503) means your key could not be checked for a moment. It was
-not rejected, so don't rotate it: wait `err.retryAfter` seconds (your own delay if it is
-undefined), then retry. Nothing ran, so the retry is safe. To make every send retry-safe,
-pass an `idempotencyKey` from the first attempt and reuse it on each retry (see above).
+`AUTH_UNAVAILABLE` (status 503) means your key could not be checked for a moment: it has
+not been judged yet, so don't rotate it. Wait `err.retryAfter` seconds (your own delay if
+it is undefined), then retry; if it keeps happening, check your key and our status page.
+Nothing ran, so retrying this one is safe.
 
-`err.retryAfter` belongs to the response it came with, not to one code: other errors
-(a 429, or another 503) can carry their own, longer wait.
+`err.retryAfter` (1 s to 24 h) belongs to the response it came with, not to one code: a
+429 or another 503 can carry its own, longer wait. Its presence never means the request
+did nothing: a proxy error (e.g. a 502) can arrive after a code was already sent. Only an
+`idempotencyKey`, passed from the first attempt and reused on each retry, makes a retried
+send safe (see above).
 
 ### The Telegram fallback
 

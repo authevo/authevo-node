@@ -150,7 +150,7 @@ describe('Authevo', () => {
     await expect(gateway.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 502, retryAfter: 7 });
   });
 
-  it('never reports retryAfter below 1 s, and ignores a blank header', async () => {
+  it('keeps retryAfter within 1 s..24 h and ignores anything that is not seconds or an HTTP-date', async () => {
     const send = async (value: string) => {
       const { client } = withFetch(
         () => new Response(JSON.stringify({ error: { code: 'X', message: 'x' } }), { status: 503, headers: { 'retry-after': value } }),
@@ -158,10 +158,32 @@ describe('Authevo', () => {
       return client.otp.send({ phone: '+201234567890' }).catch((e) => e);
     };
     expect((await send('0')).retryAfter).toBe(1);
-    expect((await send('-3')).retryAfter).toBe(1);
+    expect((await send('0.2')).retryAfter).toBe(1);
+    expect((await send('1.5')).retryAfter).toBe(2);
+    expect((await send('1e12')).retryAfter).toBeUndefined(); // not delta-seconds
+    expect((await send('999999999')).retryAfter).toBe(86_400);
     expect((await send(new Date(Date.now() - 60_000).toUTCString())).retryAfter).toBe(1);
-    expect((await send('   ')).retryAfter).toBeUndefined();
-    expect((await send('soon')).retryAfter).toBeUndefined();
+    const future = (await send(new Date(Date.now() + 30_000).toUTCString())).retryAfter;
+    expect(future).toBeGreaterThanOrEqual(29);
+    expect(future).toBeLessThanOrEqual(31);
+    expect((await send('Fri, 31 Dec 9999 23:59:59 GMT')).retryAfter).toBe(86_400);
+    for (const junk of ['-3', 'soon', 'foo 2', '5, 6', 'Infinity', '0x10']) {
+      expect((await send(junk)).retryAfter, junk).toBeUndefined();
+    }
+  });
+
+  it('trims a custom fetch\'s untrimmed header value (a blank one is unset)', async () => {
+    const fakeResponse = (value: string) =>
+      ({
+        ok: false,
+        status: 503,
+        headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? value : null) },
+        json: async () => ({ error: { code: 'AUTH_UNAVAILABLE', message: 'x' } }),
+      }) as unknown as Response;
+    const blank = new Authevo({ apiKey: 'sk_test', fetch: (async () => fakeResponse('   ')) as unknown as typeof fetch });
+    expect((await blank.otp.send({ phone: '+201234567890' }).catch((e) => e)).retryAfter).toBeUndefined();
+    const padded = new Authevo({ apiKey: 'sk_test', fetch: (async () => fakeResponse('  5 ')) as unknown as typeof fetch });
+    expect((await padded.otp.send({ phone: '+201234567890' }).catch((e) => e)).retryAfter).toBe(5);
   });
 
   it('maps a network failure to a network_error', async () => {
