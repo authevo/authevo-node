@@ -170,6 +170,21 @@ describe('Authevo', () => {
     for (const junk of ['-3', 'soon', 'foo 2', '5, 6', 'Infinity', '0x10']) {
       expect((await send(junk)).retryAfter, junk).toBeUndefined();
     }
+    // Deliberate: only IMF-fixdate is accepted (the API sends delta-seconds only).
+    const soon = new Date(Date.now() + 120_000);
+    const obsolete = [
+      soon.toUTCString().replace(/^(\w{3}), (\d{2}) (\w{3}) \d{2}(\d{2})/, 'Wednesday, $2-$3-$4'), // RFC 850-like
+      'Wed Oct 21 23:18:14 2026', // asctime
+      soon.toUTCString().replace('GMT', 'UTC'),
+    ];
+    for (const value of obsolete) expect((await send(value)).retryAfter, value).toBeUndefined();
+  });
+
+  it('a 429 with Retry-After: 0 now reports 1 s (it used to report 0, "retry at once")', async () => {
+    const { client } = withFetch(
+      () => new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_EXCEEDED', message: 'x' } }), { status: 429, headers: { 'retry-after': '0' } }),
+    );
+    expect(await client.otp.send({ phone: '+201234567890' }).catch((e) => e)).toMatchObject({ status: 429, retryAfter: 1 });
   });
 
   it('trims a custom fetch\'s untrimmed header value (a blank one is unset)', async () => {

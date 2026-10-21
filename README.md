@@ -201,7 +201,7 @@ Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED
 
 `AUTH_UNAVAILABLE` (status 503) means your key could not be checked for a moment: it has
 not been judged yet, so don't rotate it. Wait `err.retryAfter` seconds (your own delay if
-it is undefined), then retry; if it keeps happening, check your key and our status page.
+it is undefined), then retry; if it keeps happening, check your key and https://status.authevo.dev.
 Nothing ran, so retrying this one is safe.
 
 `err.retryAfter` (1 s to 24 h) belongs to the response it came with, not to one code: a

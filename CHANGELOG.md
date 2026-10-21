@@ -12,8 +12,10 @@ All notable changes to `authevo` are documented here. This project follows
   header still leaves it unset.
 - `retryAfter` now stays within 1 s to 24 h (the API's own bounds): a `0` or past date
   reads as 1 (it used to read as 0, "retry at once"), an absurd value is capped at
-  86400. A value that is neither seconds nor an HTTP-date (e.g. `-3`, `soon`, `5, 6`)
-  leaves it unset.
+  86400. A value that is neither delta-seconds nor an RFC 9110 IMF-fixdate
+  (`Sun, 06 Nov 1994 08:49:37 GMT`) leaves it unset, e.g. `-3`, `soon`, `5, 6`, or an
+  obsolete RFC 850 / asctime date from a third-party proxy. The Authevo API only ever
+  sends delta-seconds.
 
 ## 0.7.0 (2026-10-11)
 

@@ -65,8 +65,10 @@ const clampRetryAfter = (seconds: number): number =>
 // RFC 9110 IMF-fixdate, e.g. "Sun, 06 Nov 1994 08:49:37 GMT" (what servers send).
 const HTTP_DATE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/;
 
-/** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds within
- *  1 s..24 h. Anything else (junk, a merged "5, 6", a negative) is ignored: undefined. */
+/** `Retry-After` as delta-seconds or an RFC 9110 IMF-fixdate — normalize to whole seconds
+ *  within 1 s..24 h. Anything else (junk, a merged "5, 6", a negative, the obsolete RFC 850
+ *  and asctime date forms) is ignored: undefined, so the caller uses its own delay. The
+ *  Authevo API only ever sends delta-seconds. */
 function parseRetryAfter(header: unknown): number | undefined {
   const value = typeof header === 'string' ? header.trim() : '';
   if (!value) return undefined;
