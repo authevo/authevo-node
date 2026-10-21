@@ -67,8 +67,8 @@ const HTTP_DATE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/
 
 /** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds within
  *  1 s..24 h. Anything else (junk, a merged "5, 6", a negative) is ignored: undefined. */
-function parseRetryAfter(header: string | null): number | undefined {
-  const value = header?.trim();
+function parseRetryAfter(header: unknown): number | undefined {
+  const value = typeof header === 'string' ? header.trim() : '';
   if (!value) return undefined;
   if (/^\d+(\.\d+)?$/.test(value)) return clampRetryAfter(Number(value));
   if (HTTP_DATE.test(value)) {
@@ -350,7 +350,11 @@ export class Authevo {
       // Honoured on any error response that carries it: today the API sends it on 429
       // (rate limited) and on 503s such as AUTH_UNAVAILABLE (the key could not be
       // checked right now), and a new case must not need another SDK release.
-      const retryAfter = parseRetryAfter(res.headers.get('retry-after'));
+      // Guarded: hand-rolled fetch mocks often omit `headers`, and reading it for every
+      // error status (not only a 429) must never turn their errors into a TypeError.
+      const retryAfter = parseRetryAfter(
+        typeof res.headers?.get === 'function' ? res.headers.get('retry-after') : undefined,
+      );
       throw new AuthevoError(
         envelope?.code ?? `http_${res.status}`,
         envelope?.message ?? `Request failed with status ${res.status}.`,

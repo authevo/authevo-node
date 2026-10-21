@@ -186,6 +186,21 @@ describe('Authevo', () => {
     expect((await padded.otp.send({ phone: '+201234567890' }).catch((e) => e)).retryAfter).toBe(5);
   });
 
+  it('still throws an AuthevoError when a custom fetch response has no headers object', async () => {
+    const bare = new Authevo({
+      apiKey: 'sk_test',
+      fetch: (async () => ({ ok: false, status: 500, json: async () => ({ error: { code: 'INTERNAL_ERROR', message: 'x' } }) })) as unknown as typeof fetch,
+    });
+    const err = await bare.otp.send({ phone: '+201234567890' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AuthevoError);
+    expect(err).toMatchObject({ code: 'INTERNAL_ERROR', status: 500, retryAfter: undefined });
+    const odd = new Authevo({
+      apiKey: 'sk_test',
+      fetch: (async () => ({ ok: false, status: 503, headers: { get: () => 5 }, json: async () => ({ error: { code: 'X', message: 'x' } }) })) as unknown as typeof fetch,
+    });
+    expect(await odd.otp.send({ phone: '+201234567890' }).catch((e) => e)).toMatchObject({ code: 'X', retryAfter: undefined });
+  });
+
   it('maps a network failure to a network_error', async () => {
     const client = new Authevo({
       apiKey: 'sk_test',
