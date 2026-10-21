@@ -3,7 +3,7 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.8.0 (2026-10-22)
 
 - `AuthevoError.retryAfter` is now set on any error response that carries
   `Retry-After`, not only a 429. This covers the API's new 503 `AUTH_UNAVAILABLE`: the
