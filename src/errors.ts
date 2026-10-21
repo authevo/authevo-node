@@ -2,7 +2,8 @@
  * The single error type every Authevo call rejects with. Inspect `code` (the API's
  * stable machine code, e.g. `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, or a client
  * code like `network_error` / `invalid_config`), `status` (HTTP status, 0 for
- * network/config errors), and `retryAfter` (seconds, set on a 429 or 503 when the API sends it).
+ * network/config errors), and `retryAfter` (seconds to wait, at least 1, set whenever the error
+ * response carries `Retry-After`: today on a 429 and on 503s such as `AUTH_UNAVAILABLE`).
  * Rate-limit errors may also carry `reason`, `limit`, and `windowSeconds`, allowing
  * integrations to distinguish a recipient cooldown from account-wide pressure.
  *

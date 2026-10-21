@@ -130,19 +130,38 @@ describe('Authevo', () => {
     });
   });
 
-  it('leaves retryAfter unset on a 503 without Retry-After, and on a 500 even with one', async () => {
+  it('leaves retryAfter unset when the error response has no Retry-After', async () => {
     const noHeader = withFetch(
       () => new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_UNAVAILABLE', message: 'x' } }), { status: 503 }),
     );
     await expect(noHeader.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 503, retryAfter: undefined });
-    const serverError = withFetch(
+  });
+
+  it('honours Retry-After on any error status that carries it (no SDK release per new case)', async () => {
+    const other = withFetch(
       () =>
-        new Response(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'x' } }), {
-          status: 500,
-          headers: { 'retry-after': '5' },
+        new Response(JSON.stringify({ error: { code: 'CAPACITY_REQUEST_UNAVAILABLE', message: 'x' } }), {
+          status: 503,
+          headers: { 'retry-after': '60' },
         }),
     );
-    await expect(serverError.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 500, retryAfter: undefined });
+    await expect(other.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 503, retryAfter: 60 });
+    const gateway = withFetch(() => new Response('', { status: 502, headers: { 'retry-after': '7' } }));
+    await expect(gateway.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 502, retryAfter: 7 });
+  });
+
+  it('never reports retryAfter below 1 s, and ignores a blank header', async () => {
+    const send = async (value: string) => {
+      const { client } = withFetch(
+        () => new Response(JSON.stringify({ error: { code: 'X', message: 'x' } }), { status: 503, headers: { 'retry-after': value } }),
+      );
+      return client.otp.send({ phone: '+201234567890' }).catch((e) => e);
+    };
+    expect((await send('0')).retryAfter).toBe(1);
+    expect((await send('-3')).retryAfter).toBe(1);
+    expect((await send(new Date(Date.now() - 60_000).toUTCString())).retryAfter).toBe(1);
+    expect((await send('   ')).retryAfter).toBeUndefined();
+    expect((await send('soon')).retryAfter).toBeUndefined();
   });
 
   it('maps a network failure to a network_error', async () => {

@@ -5,10 +5,13 @@ All notable changes to `authevo` are documented here. This project follows
 
 ## Unreleased
 
-- `AuthevoError.retryAfter` is now also set on a 503 when the API sends `Retry-After`,
-  for example on `AUTH_UNAVAILABLE`: the API could not check your key for a moment
-  (it was not rejected), so wait `retryAfter` seconds and retry with the same
-  idempotency key. Nothing else changes: a 503 without the header leaves it unset.
+- `AuthevoError.retryAfter` is now set on any error response that carries
+  `Retry-After`, not only a 429. This covers the API's new 503 `AUTH_UNAVAILABLE`: the
+  API could not check your key for a moment (it was not rejected), so wait `retryAfter`
+  seconds and retry, with the same `idempotencyKey` for a send. A response without the
+  header still leaves it unset.
+- `retryAfter` is never below 1 s now: a `0`, negative or past value reads as 1, and a
+  blank header as unset (it used to read as 0, i.e. "retry at once").
 
 ## 0.7.0 (2026-10-11)
 

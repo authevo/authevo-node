@@ -55,13 +55,16 @@ export function createIdempotencyKey(): string {
   return randomUUID();
 }
 
-/** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds. */
+/** `Retry-After` is delta-seconds or an HTTP-date — normalize to whole seconds. Never
+ *  0: a zero, negative, blank-padded or past value would read as "retry at once" and
+ *  feed a tight loop during an outage; the API itself never asks for less than 1 s. */
 function parseRetryAfter(header: string | null): number | undefined {
-  if (!header) return undefined;
-  const secs = Number(header);
-  if (Number.isFinite(secs)) return Math.max(0, Math.ceil(secs));
-  const date = Date.parse(header);
-  if (!Number.isNaN(date)) return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+  const value = header?.trim();
+  if (!value) return undefined;
+  const secs = Number(value);
+  if (Number.isFinite(secs)) return Math.max(1, Math.ceil(secs));
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) return Math.max(1, Math.ceil((date - Date.now()) / 1000));
   return undefined;
 }
 
@@ -334,12 +337,10 @@ export class Authevo {
               window_seconds?: number;
             } }).error
           : undefined;
-      // 429 (rate limited) and 503 (e.g. AUTH_UNAVAILABLE: the key could not be checked
-      // right now) both carry Retry-After when the API knows how long to wait.
-      const retryAfter =
-        res.status === 429 || res.status === 503
-          ? parseRetryAfter(res.headers.get('retry-after'))
-          : undefined;
+      // Honoured on any error response that carries it: today the API sends it on 429
+      // (rate limited) and on 503s such as AUTH_UNAVAILABLE (the key could not be
+      // checked right now), and a new case must not need another SDK release.
+      const retryAfter = parseRetryAfter(res.headers.get('retry-after'));
       throw new AuthevoError(
         envelope?.code ?? `http_${res.status}`,
         envelope?.message ?? `Request failed with status ${res.status}.`,
