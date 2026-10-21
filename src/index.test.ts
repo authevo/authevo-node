@@ -115,6 +115,107 @@ describe('Authevo', () => {
     });
   });
 
+  it('throws AuthevoError with a 503 AUTH_UNAVAILABLE retryAfter (the key could not be checked, not rejected)', async () => {
+    const { client } = withFetch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'AUTH_UNAVAILABLE', message: 'Authentication is temporarily unavailable. Retry in a few seconds.' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json', 'retry-after': '5' },
+        }),
+    );
+    await expect(client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({
+      code: 'AUTH_UNAVAILABLE',
+      status: 503,
+      retryAfter: 5,
+    });
+  });
+
+  it('leaves retryAfter unset when the error response has no Retry-After', async () => {
+    const noHeader = withFetch(
+      () => new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_UNAVAILABLE', message: 'x' } }), { status: 503 }),
+    );
+    await expect(noHeader.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 503, retryAfter: undefined });
+  });
+
+  it('honours Retry-After on any error status that carries it (no SDK release per new case)', async () => {
+    const other = withFetch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'CAPACITY_REQUEST_UNAVAILABLE', message: 'x' } }), {
+          status: 503,
+          headers: { 'retry-after': '60' },
+        }),
+    );
+    await expect(other.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 503, retryAfter: 60 });
+    const gateway = withFetch(() => new Response('', { status: 502, headers: { 'retry-after': '7' } }));
+    await expect(gateway.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 502, retryAfter: 7 });
+  });
+
+  it('keeps retryAfter within 1 s..24 h and ignores anything that is not seconds or an HTTP-date', async () => {
+    const send = async (value: string) => {
+      const { client } = withFetch(
+        () => new Response(JSON.stringify({ error: { code: 'X', message: 'x' } }), { status: 503, headers: { 'retry-after': value } }),
+      );
+      return client.otp.send({ phone: '+201234567890' }).catch((e) => e);
+    };
+    expect((await send('0')).retryAfter).toBe(1);
+    expect((await send('0.2')).retryAfter).toBe(1);
+    expect((await send('1.5')).retryAfter).toBe(2);
+    expect((await send('1e12')).retryAfter).toBeUndefined(); // not delta-seconds
+    expect((await send('999999999')).retryAfter).toBe(86_400);
+    expect((await send(new Date(Date.now() - 60_000).toUTCString())).retryAfter).toBe(1);
+    const future = (await send(new Date(Date.now() + 30_000).toUTCString())).retryAfter;
+    expect(future).toBeGreaterThanOrEqual(29);
+    expect(future).toBeLessThanOrEqual(31);
+    expect((await send('Fri, 31 Dec 9999 23:59:59 GMT')).retryAfter).toBe(86_400);
+    for (const junk of ['-3', 'soon', 'foo 2', '5, 6', 'Infinity', '0x10']) {
+      expect((await send(junk)).retryAfter, junk).toBeUndefined();
+    }
+    // Deliberate: only IMF-fixdate is accepted (the API sends delta-seconds only).
+    const soon = new Date(Date.now() + 120_000);
+    const obsolete = [
+      soon.toUTCString().replace(/^(\w{3}), (\d{2}) (\w{3}) \d{2}(\d{2})/, 'Wednesday, $2-$3-$4'), // RFC 850-like
+      'Wed Oct 21 23:18:14 2026', // asctime
+      soon.toUTCString().replace('GMT', 'UTC'),
+    ];
+    for (const value of obsolete) expect((await send(value)).retryAfter, value).toBeUndefined();
+  });
+
+  it('a 429 with Retry-After: 0 now reports 1 s (it used to report 0, "retry at once")', async () => {
+    const { client } = withFetch(
+      () => new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_EXCEEDED', message: 'x' } }), { status: 429, headers: { 'retry-after': '0' } }),
+    );
+    expect(await client.otp.send({ phone: '+201234567890' }).catch((e) => e)).toMatchObject({ status: 429, retryAfter: 1 });
+  });
+
+  it('trims a custom fetch\'s untrimmed header value (a blank one is unset)', async () => {
+    const fakeResponse = (value: string) =>
+      ({
+        ok: false,
+        status: 503,
+        headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? value : null) },
+        json: async () => ({ error: { code: 'AUTH_UNAVAILABLE', message: 'x' } }),
+      }) as unknown as Response;
+    const blank = new Authevo({ apiKey: 'sk_test', fetch: (async () => fakeResponse('   ')) as unknown as typeof fetch });
+    expect((await blank.otp.send({ phone: '+201234567890' }).catch((e) => e)).retryAfter).toBeUndefined();
+    const padded = new Authevo({ apiKey: 'sk_test', fetch: (async () => fakeResponse('  5 ')) as unknown as typeof fetch });
+    expect((await padded.otp.send({ phone: '+201234567890' }).catch((e) => e)).retryAfter).toBe(5);
+  });
+
+  it('still throws an AuthevoError when a custom fetch response has no headers object', async () => {
+    const bare = new Authevo({
+      apiKey: 'sk_test',
+      fetch: (async () => ({ ok: false, status: 500, json: async () => ({ error: { code: 'INTERNAL_ERROR', message: 'x' } }) })) as unknown as typeof fetch,
+    });
+    const err = await bare.otp.send({ phone: '+201234567890' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AuthevoError);
+    expect(err).toMatchObject({ code: 'INTERNAL_ERROR', status: 500, retryAfter: undefined });
+    const odd = new Authevo({
+      apiKey: 'sk_test',
+      fetch: (async () => ({ ok: false, status: 503, headers: { get: () => 5 }, json: async () => ({ error: { code: 'X', message: 'x' } }) })) as unknown as typeof fetch,
+    });
+    expect(await odd.otp.send({ phone: '+201234567890' }).catch((e) => e)).toMatchObject({ code: 'X', retryAfter: undefined });
+  });
+
   it('maps a network failure to a network_error', async () => {
     const client = new Authevo({
       apiKey: 'sk_test',

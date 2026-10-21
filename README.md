@@ -188,15 +188,27 @@ try {
 } catch (err) {
   if (err instanceof AuthevoError) {
     console.error(err.code, err.status, err.message);
-    if (err.code === 'RATE_LIMIT_EXCEEDED') {
-      // Back off and retry. err.retryAfter is the seconds to wait *when* the API
-      // includes a Retry-After header (otherwise undefined — fall back to your own delay).
+    if (err.code === 'RATE_LIMIT_EXCEEDED' || err.code === 'AUTH_UNAVAILABLE') {
+      // Back off and retry. err.retryAfter is the seconds to wait *when* the response
+      // includes a Retry-After header (at least 1; otherwise undefined — fall back to
+      // your own delay, e.g. 5 s).
     }
   }
 }
 ```
 
-Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), `IDEMPOTENCY_KEY_IN_PROGRESS`, plus client-side `invalid_phone` / `invalid_config` / `invalid_idempotency_key` / `network_error`.
+Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `AUTH_UNAVAILABLE`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), `IDEMPOTENCY_KEY_IN_PROGRESS`, plus client-side `invalid_phone` / `invalid_config` / `invalid_idempotency_key` / `network_error`.
+
+`AUTH_UNAVAILABLE` (status 503) means your key could not be checked for a moment: it has
+not been judged yet, so don't rotate it. Wait `err.retryAfter` seconds (your own delay if
+it is undefined), then retry; if it keeps happening, check your key and https://status.authevo.dev.
+Nothing ran, so retrying this one is safe.
+
+`err.retryAfter` (1 s to 24 h) belongs to the response it came with, not to one code: a
+429 or another 503 can carry its own, longer wait. Its presence never means the request
+did nothing: a proxy error (e.g. a 502) can arrive after a code was already sent. Only an
+`idempotencyKey`, passed from the first attempt and reused on each retry, makes a retried
+send safe (see above).
 
 ### The Telegram fallback
 

@@ -3,6 +3,20 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- `AuthevoError.retryAfter` is now set on any error response that carries
+  `Retry-After`, not only a 429. This covers the API's new 503 `AUTH_UNAVAILABLE`: the
+  API could not check your key for a moment (it was not rejected), so wait `retryAfter`
+  seconds and retry, with the same `idempotencyKey` for a send. A response without the
+  header still leaves it unset.
+- `retryAfter` now stays within 1 s to 24 h (the API's own bounds): a `0` or past date
+  reads as 1 (it used to read as 0, "retry at once"), an absurd value is capped at
+  86400. A value that is neither delta-seconds nor an RFC 9110 IMF-fixdate
+  (`Sun, 06 Nov 1994 08:49:37 GMT`) leaves it unset, e.g. `-3`, `soon`, `5, 6`, or an
+  obsolete RFC 850 / asctime date from a third-party proxy. The Authevo API only ever
+  sends delta-seconds.
+
 ## 0.7.0 (2026-10-11)
 
 - `otp.verify` now returns `retryAfterSeconds` on the wrong guess that starts the
