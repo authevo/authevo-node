@@ -334,8 +334,12 @@ export class Authevo {
               window_seconds?: number;
             } }).error
           : undefined;
+      // 429 (rate limited) and 503 (e.g. AUTH_UNAVAILABLE: the key could not be checked
+      // right now) both carry Retry-After when the API knows how long to wait.
       const retryAfter =
-        res.status === 429 ? parseRetryAfter(res.headers.get('retry-after')) : undefined;
+        res.status === 429 || res.status === 503
+          ? parseRetryAfter(res.headers.get('retry-after'))
+          : undefined;
       throw new AuthevoError(
         envelope?.code ?? `http_${res.status}`,
         envelope?.message ?? `Request failed with status ${res.status}.`,

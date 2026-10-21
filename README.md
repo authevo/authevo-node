@@ -198,6 +198,10 @@ try {
 
 Common codes: `INSUFFICIENT_CREDITS`, `RATE_LIMIT_EXCEEDED`, `CHANNEL_NOT_LINKED`, `INVALID_API_KEY`, `ALREADY_ENROLLED` (TOTP re-enroll without `replace: true`), `IDEMPOTENCY_KEY_IN_PROGRESS`, plus client-side `invalid_phone` / `invalid_config` / `invalid_idempotency_key` / `network_error`.
 
+`AUTH_UNAVAILABLE` (status 503) means your key could not be checked for a moment. It was
+not rejected, so don't rotate it. Wait `err.retryAfter` seconds, then retry. For a send,
+reuse the same idempotency key, so a retry can never send a second code.
+
 ### The Telegram fallback
 
 When WhatsApp delivery fails and the recipient has never linked Telegram, the error is

@@ -3,6 +3,13 @@
 All notable changes to `authevo` are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- `AuthevoError.retryAfter` is now also set on a 503 when the API sends `Retry-After`,
+  for example on `AUTH_UNAVAILABLE`: the API could not check your key for a moment
+  (it was not rejected), so wait `retryAfter` seconds and retry with the same
+  idempotency key. Nothing else changes: a 503 without the header leaves it unset.
+
 ## 0.7.0 (2026-10-11)
 
 - `otp.verify` now returns `retryAfterSeconds` on the wrong guess that starts the

@@ -115,6 +115,36 @@ describe('Authevo', () => {
     });
   });
 
+  it('throws AuthevoError with a 503 AUTH_UNAVAILABLE retryAfter (the key could not be checked, not rejected)', async () => {
+    const { client } = withFetch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'AUTH_UNAVAILABLE', message: 'Authentication is temporarily unavailable. Retry in a few seconds.' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json', 'retry-after': '5' },
+        }),
+    );
+    await expect(client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({
+      code: 'AUTH_UNAVAILABLE',
+      status: 503,
+      retryAfter: 5,
+    });
+  });
+
+  it('leaves retryAfter unset on a 503 without Retry-After, and on a 500 even with one', async () => {
+    const noHeader = withFetch(
+      () => new Response(JSON.stringify({ error: { code: 'RATE_LIMIT_UNAVAILABLE', message: 'x' } }), { status: 503 }),
+    );
+    await expect(noHeader.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 503, retryAfter: undefined });
+    const serverError = withFetch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'x' } }), {
+          status: 500,
+          headers: { 'retry-after': '5' },
+        }),
+    );
+    await expect(serverError.client.otp.send({ phone: '+201234567890' })).rejects.toMatchObject({ status: 500, retryAfter: undefined });
+  });
+
   it('maps a network failure to a network_error', async () => {
     const client = new Authevo({
       apiKey: 'sk_test',
